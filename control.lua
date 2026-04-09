@@ -1,5 +1,7 @@
 require("own")
 
+local hud_update_delay = 4 * 60
+
 local function storage_per_player(player_index)
   if not storage.per_player then
     storage.per_player = {}
@@ -11,19 +13,45 @@ local function storage_per_player(player_index)
 end
 
 local function update_hud(state, player)
-    local show = state.inventory_open or not state.dynamic_hud_enabled
+    local show_all = not state.dynamic_hud_enabled or state.inventory_open
+    local show_inventory_related = show_all or state.inventory_closed_at ~= nil
 
-    player.game_view_settings.show_research_info = show
-    player.game_view_settings.show_side_menu = show
-    player.game_view_settings.show_surface_list = show
-    player.gui.top.visible = show
+    player.game_view_settings.show_research_info = show_all
+    player.game_view_settings.show_side_menu = show_all
+    player.game_view_settings.show_surface_list = show_all
+    player.gui.top.visible = show_all
 
-    -- show_controller_gui stops displaying mouse cursor in a correct state.
+    -- show_controller_gui makes mouse cursor incorrectly indicate selected tool (e.g. wire).
     -- Instead hide each bar separately
-    player.game_view_settings.show_tool_bar = show
-    -- hiding the quickbar disables quickbar hotkeys
-    player.game_view_settings.show_quickbar = show
-    player.game_view_settings.show_shortcut_bar = show
+    player.game_view_settings.show_tool_bar = show_inventory_related
+    -- note: hiding the quickbar disables quickbar hotkeys for some reason
+    player.game_view_settings.show_quickbar = show_inventory_related
+    player.game_view_settings.show_shortcut_bar = show_inventory_related
+
+    if state.inventory_closed_at ~= nil then
+        -- its "nth" tick from 0, not from the moment of subscription
+        -- so making checks more frequent
+        -- to make the actual delay closer to the ideal delay
+        local ticks_per_update = math.ceil(hud_update_delay / 4)
+        script.on_nth_tick(ticks_per_update, function(event)
+            local more_updates = false
+
+            for player_index, state in pairs(storage.per_player) do
+                if state.inventory_closed_at ~= nil then
+                    if event.tick - state.inventory_closed_at >= hud_update_delay then
+                        state.inventory_closed_at = nil
+                        update_hud(state, game.get_player(player_index))
+                    else
+                        more_updates = true
+                    end
+                end
+            end
+
+            if not more_updates then
+                script.on_nth_tick(ticks_per_update, nil)
+            end
+        end)
+    end
 end
 
 local function setup(player)
@@ -75,6 +103,7 @@ script.on_event(defines.events.on_gui_closed, function(event)
 
     state.inventory_open = false
     if state.dynamic_hud_enabled then
+        state.inventory_closed_at = event.tick
         update_hud(state, player)
     end
 end)
