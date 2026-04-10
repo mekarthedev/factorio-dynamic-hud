@@ -1,5 +1,10 @@
 require("own")
 
+-- #todo: some hud not hiding after new game cutscene
+-- #todo: also show quckbar when opening a vehicle
+-- #todo: newer init code wont run after mod update
+-- #todo: unsubscribe from all events instead of constantly checking if mod is enabled
+
 local hud_update_delay = 4 * 60
 
 local function storage_per_player(player_index)
@@ -14,40 +19,46 @@ end
 
 local function update_hud(state, player)
     local show_all = not state.dynamic_hud_enabled or state.inventory_open
-    local show_inventory_related = show_all or state.inventory_closed_at ~= nil
+    local show_tools = show_all or state.time_of.inventory_closed ~= nil
+    local show_research = show_all or state.time_of.research_updated ~= nil
 
-    player.game_view_settings.show_research_info = show_all
     player.game_view_settings.show_side_menu = show_all
     player.game_view_settings.show_surface_list = show_all
     player.gui.top.visible = show_all
 
+    player.game_view_settings.show_research_info = show_research
+
     -- show_controller_gui makes mouse cursor incorrectly indicate selected tool (e.g. wire).
     -- Instead hide each bar separately
-    player.game_view_settings.show_tool_bar = show_inventory_related
+    player.game_view_settings.show_tool_bar = show_tools
     -- note: hiding the quickbar disables quickbar hotkeys for some reason
-    player.game_view_settings.show_quickbar = show_inventory_related
-    player.game_view_settings.show_shortcut_bar = show_inventory_related
+    player.game_view_settings.show_quickbar = show_tools
+    player.game_view_settings.show_shortcut_bar = show_tools
 
-    if state.inventory_closed_at ~= nil then
+    if next(state.time_of) ~= nil then
         -- its "nth" tick from 0, not from the moment of subscription
         -- so making checks more frequent
         -- to make the actual delay closer to the ideal delay
         local ticks_per_update = math.ceil(hud_update_delay / 4)
-        script.on_nth_tick(ticks_per_update, function(event)
-            local more_updates = false
+        script.on_nth_tick(ticks_per_update, function(e)
+            local wait_more = false
 
             for player_index, state in pairs(storage.per_player) do
-                if state.inventory_closed_at ~= nil then
-                    if event.tick - state.inventory_closed_at >= hud_update_delay then
-                        state.inventory_closed_at = nil
-                        update_hud(state, game.get_player(player_index))
+                local update = false
+                for event, tick in pairs(state.time_of) do
+                    if e.tick - tick >= hud_update_delay then
+                        state.time_of[event] = nil
+                        update = true
                     else
-                        more_updates = true
+                        wait_more = true
                     end
+                end
+                if update then
+                    update_hud(state, game.get_player(player_index))
                 end
             end
 
-            if not more_updates then
+            if not wait_more then
                 script.on_nth_tick(ticks_per_update, nil)
             end
         end)
@@ -59,6 +70,7 @@ local function setup(player)
     if state.dynamic_hud_enabled == nil then
         state.dynamic_hud_enabled = true
         state.inventory_open = false
+        state.time_of = {}
         update_hud(state, player)
         player.print("Your HUD will hide when not needed")
     end
@@ -103,7 +115,34 @@ script.on_event(defines.events.on_gui_closed, function(event)
 
     state.inventory_open = false
     if state.dynamic_hud_enabled then
-        state.inventory_closed_at = event.tick
+        state.time_of.inventory_closed = event.tick
         update_hud(state, player)
+    end
+end)
+
+local function on_active_research_updated(tick, force)
+    for _, player in pairs(force.players) do
+        local state = storage_per_player(player.index)
+        if state.dynamic_hud_enabled then
+            state.time_of.research_updated = tick
+            update_hud(state, player)
+        end
+    end
+end
+
+script.on_event(defines.events.on_research_started, function(event)
+    on_active_research_updated(event.tick, event.research.force)
+end)
+
+script.on_event(defines.events.on_research_finished, function(event)
+    on_active_research_updated(event.tick, event.research.force)
+end)
+
+script.on_event(defines.events.on_research_cancelled, function(event)
+    -- the goal is to update HUD only if the queue head was cancelled
+    -- if queue is still not empty then `started` would fire for next tech
+    if #event.force.research_queue == 0 then
+        log("queue is empty")
+        on_active_research_updated(event.tick, event.force)
     end
 end)
