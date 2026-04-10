@@ -2,11 +2,11 @@ require("own")
 
 -- #todo: some hud not hiding after new game cutscene
 -- #todo: also show quckbar when opening a vehicle
--- #todo: newer init code wont run after mod update
 -- #todo: unsubscribe from all events instead of constantly checking if mod is enabled
 -- #todo: better onboarding message
 -- #todo: test in multiplayer
 -- #todo: settings for non-standard or opinionated cases (like map)
+-- #todo: check if other gui roots should be hidden, aside from `top`
 
 local hud_update_delay = 4 * 60
 
@@ -72,19 +72,41 @@ local function update_hud(player_index)
 end
 
 local function setup(player_index)
+    local function add_state(state, key, initial_value)
+        if state[key] == nil then
+            state[key] = initial_value
+        end
+    end
+
     local state = storage_per_player(player_index)
+
     if state.dynamic_hud_enabled == nil then
         state.dynamic_hud_enabled = true
-        state.inventory_open = false
-        state.time_of = {}
-        update_hud(player_index)
-
         game.get_player(player_index)
             .print("Your HUD will hide when not needed")
     end
+
+    -- NOTE:
+    -- after mod is published, presence of some keys
+    -- does not indicate presence of other keys.
+    -- Always use `add_state()` for new keys,
+    -- `dynamic_hud_enabled` is the only exception.
+    add_state(state, "inventory_open", false)
+    add_state(state, "time_of", {})
+
+    -- it is forbidden to update storage during `on_load`,
+    -- and `on_configuration_changed` isn't affected by changes in `control.lua`
+    -- only by a change in the mod version.
+    --
+    -- So, when in development, after adding a new state key
+    -- `own"activate"` can be used to re-run setup
+    --
+    -- For that reason make sure `setup` is always idempotent
+
+    update_hud(player_index)
 end
 
-script.on_init(function(event)
+script.on_configuration_changed(function(event)
     for _, player in pairs(game.players) do
         setup(player.index)
     end
@@ -97,7 +119,9 @@ end)
 script.on_event(own"activate", function(event)
     local state = storage_per_player(event.player_index)
     state.dynamic_hud_enabled = not state.dynamic_hud_enabled
-    update_hud(event.player_index)
+    -- for ease of mod development, re-run `setup` here instead of `update_hud`
+    -- see `setup()` for details
+    setup(event.player_index)
 end)
 
 script.on_event(defines.events.on_gui_opened, function(event)
