@@ -1,6 +1,5 @@
 require("own")
 
--- #todo: some hud not hiding after new game cutscene
 -- #todo: also show quckbar when opening a vehicle
 -- #todo: unsubscribe from all events instead of constantly checking if mod is enabled
 -- #todo: better onboarding message
@@ -122,6 +121,16 @@ script.on_event(own"activate", function(event)
     -- for ease of mod development, re-run `setup` here instead of `update_hud`
     -- see `setup()` for details
     setup(event.player_index)
+end)
+
+-- The system UI elements somehow aren't affected
+-- while the new game cutscene is playing
+script.on_event(defines.events.on_cutscene_cancelled, function(event)
+    update_hud(event.player_index)
+end)
+
+script.on_event(defines.events.on_cutscene_finished, function(event)
+    update_hud(event.player_index)
 end)
 
 script.on_event(defines.events.on_gui_opened, function(event)
