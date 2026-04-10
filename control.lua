@@ -4,6 +4,9 @@ require("own")
 -- #todo: also show quckbar when opening a vehicle
 -- #todo: newer init code wont run after mod update
 -- #todo: unsubscribe from all events instead of constantly checking if mod is enabled
+-- #todo: better onboarding message
+-- #todo: test in multiplayer
+-- #todo: settings for non-standard or opinionated cases (like map)
 
 local hud_update_delay = 4 * 60
 
@@ -17,7 +20,10 @@ local function storage_per_player(player_index)
   return storage.per_player[player_index]
 end
 
-local function update_hud(state, player)
+local function update_hud(player_index)
+    local state = storage_per_player(player_index)
+    local player = game.get_player(player_index)
+
     local show_all = not state.dynamic_hud_enabled or state.inventory_open
     local show_tools = show_all or state.time_of.inventory_closed ~= nil
     local show_research = show_all or state.time_of.research_updated ~= nil
@@ -54,7 +60,7 @@ local function update_hud(state, player)
                     end
                 end
                 if update then
-                    update_hud(state, game.get_player(player_index))
+                    update_hud(player_index)
                 end
             end
 
@@ -65,58 +71,53 @@ local function update_hud(state, player)
     end
 end
 
-local function setup(player)
-    local state = storage_per_player(player.index)
+local function setup(player_index)
+    local state = storage_per_player(player_index)
     if state.dynamic_hud_enabled == nil then
         state.dynamic_hud_enabled = true
         state.inventory_open = false
         state.time_of = {}
-        update_hud(state, player)
-        player.print("Your HUD will hide when not needed")
+        update_hud(player_index)
+
+        game.get_player(player_index)
+            .print("Your HUD will hide when not needed")
     end
 end
 
 script.on_init(function(event)
     for _, player in pairs(game.players) do
-        setup(player)
+        setup(player.index)
     end
 end)
 
 script.on_event(defines.events.on_player_joined_game, function(event)
-    local player = game.get_player(event.player_index)
-    setup(player)
+    setup(event.player_index)
 end)
 
 script.on_event(own"activate", function(event)
-    local player = game.get_player(event.player_index)
     local state = storage_per_player(event.player_index)
-
     state.dynamic_hud_enabled = not state.dynamic_hud_enabled
-    update_hud(state, player)
+    update_hud(event.player_index)
 end)
 
 script.on_event(defines.events.on_gui_opened, function(event)
     if event.gui_type ~= defines.gui_type.controller then return end
 
-    local player = game.get_player(event.player_index)
     local state = storage_per_player(event.player_index)
-
     state.inventory_open = true
     if state.dynamic_hud_enabled then
-        update_hud(state, player)
+        update_hud(event.player_index)
     end
 end)
 
 script.on_event(defines.events.on_gui_closed, function(event)
     if event.gui_type ~= defines.gui_type.controller then return end
 
-    local player = game.get_player(event.player_index)
     local state = storage_per_player(event.player_index)
-
     state.inventory_open = false
     if state.dynamic_hud_enabled then
         state.time_of.inventory_closed = event.tick
-        update_hud(state, player)
+        update_hud(event.player_index)
     end
 end)
 
@@ -125,7 +126,7 @@ local function on_active_research_updated(tick, force)
         local state = storage_per_player(player.index)
         if state.dynamic_hud_enabled then
             state.time_of.research_updated = tick
-            update_hud(state, player)
+            update_hud(player.index)
         end
     end
 end
