@@ -1,9 +1,8 @@
-require("own")
+require("commons")
 
 -- #todo: also show quckbar when opening a vehicle
 -- #todo: show weapon bar during battle
 -- #todo: show shortcut bar when wire cursor is selected
--- #todo: unsubscribe from all events instead of constantly checking if mod is enabled
 -- #todo: better onboarding message
 -- #todo: test in multiplayer
 -- #todo: settings for non-standard or opinionated cases (like minimap)
@@ -103,6 +102,18 @@ local function setup(player_index)
     update_hud(player_index)
 end
 
+script.on_init(function()
+    subscriptions:subscribe_all()
+end)
+
+script.on_load(function()
+    if some(storage.per_player,
+        function(state) return state.dynamic_hud_enabled end)
+    then
+        subscriptions:subscribe_all()
+    end
+end)
+
 script.on_configuration_changed(function(event)
     for _, player in pairs(game.players) do
         setup(player.index)
@@ -119,58 +130,61 @@ script.on_event(own"activate", function(event)
     -- for ease of mod development, re-run `setup` here instead of `update_hud`
     -- see `setup()` for details
     setup(event.player_index)
+
+    if state.dynamic_hud_enabled then
+        subscriptions:subscribe_all()
+
+    elseif every(storage.per_player,
+        function(state) return not state.dynamic_hud_enabled end)
+    then
+        subscriptions:unsubscribe_all()
+    end
 end)
 
 -- The system UI elements somehow aren't affected
 -- while the new game cutscene is playing
-script.on_event(defines.events.on_cutscene_cancelled, function(event)
+subscriptions:on_event(defines.events.on_cutscene_cancelled, function(event)
     update_hud(event.player_index)
 end)
 
-script.on_event(defines.events.on_cutscene_finished, function(event)
+subscriptions:on_event(defines.events.on_cutscene_finished, function(event)
     update_hud(event.player_index)
 end)
 
-script.on_event(defines.events.on_gui_opened, function(event)
+subscriptions:on_event(defines.events.on_gui_opened, function(event)
     if event.gui_type ~= defines.gui_type.controller then return end
 
     local state = storage.per_player[event.player_index]
     state.inventory_open = true
-    if state.dynamic_hud_enabled then
-        update_hud(event.player_index)
-    end
+    update_hud(event.player_index)
 end)
 
-script.on_event(defines.events.on_gui_closed, function(event)
+subscriptions:on_event(defines.events.on_gui_closed, function(event)
     if event.gui_type ~= defines.gui_type.controller then return end
 
     local state = storage.per_player[event.player_index]
     state.inventory_open = false
-    if state.dynamic_hud_enabled then
-        state.time_of.inventory_closed = event.tick
-        update_hud(event.player_index)
-    end
+    state.time_of.inventory_closed = event.tick
+    update_hud(event.player_index)
 end)
 
 local function on_active_research_updated(tick, force)
     for _, player in pairs(force.players) do
         local state = storage.per_player[player.index]
-        if state.dynamic_hud_enabled then
-            state.time_of.research_updated = tick
-            update_hud(player.index)
-        end
+        state.time_of.research_updated = tick
+        update_hud(player.index)
     end
 end
 
-script.on_event(defines.events.on_research_started, function(event)
+subscriptions:on_event(defines.events.on_research_started, function(event)
     on_active_research_updated(event.tick, event.research.force)
 end)
 
-script.on_event(defines.events.on_research_finished, function(event)
+subscriptions:on_event(defines.events.on_research_finished, function(event)
     on_active_research_updated(event.tick, event.research.force)
 end)
 
-script.on_event(defines.events.on_research_cancelled, function(event)
+subscriptions:on_event(defines.events.on_research_cancelled, function(event)
     -- the goal is to update HUD only if the queue head was cancelled
     -- if queue is still not empty then `started` would fire for next tech
     if #event.force.research_queue == 0 then
