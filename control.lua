@@ -1,26 +1,18 @@
 require("own")
 
 -- #todo: also show quckbar when opening a vehicle
+-- #todo: show weapon bar during battle
+-- #todo: show shortcut bar when wire cursor is selected
 -- #todo: unsubscribe from all events instead of constantly checking if mod is enabled
 -- #todo: better onboarding message
 -- #todo: test in multiplayer
--- #todo: settings for non-standard or opinionated cases (like map)
+-- #todo: settings for non-standard or opinionated cases (like minimap)
 -- #todo: check if other gui roots should be hidden, aside from `top`
 
 local hud_update_delay = 4 * 60
 
-local function storage_per_player(player_index)
-  if not storage.per_player then
-    storage.per_player = {}
-  end
-  if not storage.per_player[player_index] then
-    storage.per_player[player_index] = {}
-  end
-  return storage.per_player[player_index]
-end
-
 local function update_hud(player_index)
-    local state = storage_per_player(player_index)
+    local state = storage.per_player[player_index]
     local player = game.get_player(player_index)
 
     local show_all = not state.dynamic_hud_enabled or state.inventory_open
@@ -77,7 +69,13 @@ local function setup(player_index)
         end
     end
 
-    local state = storage_per_player(player_index)
+    if not storage.per_player then
+        storage.per_player = {}
+    end
+    if not storage.per_player[player_index] then
+        storage.per_player[player_index] = {}
+    end
+    local state = storage.per_player[player_index]
 
     if state.dynamic_hud_enabled == nil then
         state.dynamic_hud_enabled = true
@@ -93,14 +91,14 @@ local function setup(player_index)
     add_state(state, "inventory_open", false)
     add_state(state, "time_of", {})
 
-    -- it is forbidden to update storage during `on_load`,
-    -- and `on_configuration_changed` isn't affected by changes in `control.lua`
+    -- It is forbidden to update storage during `on_load`,
+    -- and `on_configuration_changed` isn't affected by changes in `control.lua`,
     -- only by a change in the mod version.
     --
-    -- So, when in development, after adding a new state key
-    -- `own"activate"` can be used to re-run setup
+    -- So, when in development, a `own"activate"` have to be used
+    -- to re-run setup after adding a new state key.
     --
-    -- For that reason make sure `setup` is always idempotent
+    -- For that reason make sure `setup` is always idempotent.
 
     update_hud(player_index)
 end
@@ -116,7 +114,7 @@ script.on_event(defines.events.on_player_joined_game, function(event)
 end)
 
 script.on_event(own"activate", function(event)
-    local state = storage_per_player(event.player_index)
+    local state = storage.per_player[event.player_index]
     state.dynamic_hud_enabled = not state.dynamic_hud_enabled
     -- for ease of mod development, re-run `setup` here instead of `update_hud`
     -- see `setup()` for details
@@ -136,7 +134,7 @@ end)
 script.on_event(defines.events.on_gui_opened, function(event)
     if event.gui_type ~= defines.gui_type.controller then return end
 
-    local state = storage_per_player(event.player_index)
+    local state = storage.per_player[event.player_index]
     state.inventory_open = true
     if state.dynamic_hud_enabled then
         update_hud(event.player_index)
@@ -146,7 +144,7 @@ end)
 script.on_event(defines.events.on_gui_closed, function(event)
     if event.gui_type ~= defines.gui_type.controller then return end
 
-    local state = storage_per_player(event.player_index)
+    local state = storage.per_player[event.player_index]
     state.inventory_open = false
     if state.dynamic_hud_enabled then
         state.time_of.inventory_closed = event.tick
@@ -156,7 +154,7 @@ end)
 
 local function on_active_research_updated(tick, force)
     for _, player in pairs(force.players) do
-        local state = storage_per_player(player.index)
+        local state = storage.per_player[player.index]
         if state.dynamic_hud_enabled then
             state.time_of.research_updated = tick
             update_hud(player.index)
