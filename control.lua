@@ -2,7 +2,6 @@ require("commons")
 
 -- #todo: also show quckbar when opening a vehicle
 -- #todo: show weapon bar during battle
--- #todo: show shortcut bar when wire cursor is selected
 -- #todo: better onboarding message
 -- #todo: test in multiplayer
 -- #todo: settings for non-standard or opinionated cases (like minimap)
@@ -14,9 +13,17 @@ local function update_hud(player_index)
     local state = storage.per_player[player_index]
     local player = game.get_player(player_index)
 
-    local show_all = not state.dynamic_hud_enabled or state.inventory_open
-    local show_tools = show_all or state.time_of.inventory_closed ~= nil
-    local show_research = show_all or state.time_of.research_updated ~= nil
+    local show_all = not state.dynamic_hud_enabled
+        or state.inventory_open
+
+    local show_research = show_all
+        or state.time_of.research_updated ~= nil
+
+    local show_all_controller_bars = show_all
+        or state.time_of.inventory_closed ~= nil
+    local show_shortcuts = show_all_controller_bars
+        or state.wire_in_cursor
+        or state.time_of.wire_in_cursor_dropped ~= nil
 
     player.game_view_settings.show_side_menu = show_all
     player.game_view_settings.show_surface_list = show_all
@@ -24,12 +31,11 @@ local function update_hud(player_index)
 
     player.game_view_settings.show_research_info = show_research
 
-    -- show_controller_gui makes mouse cursor incorrectly indicate selected tool (e.g. wire).
-    -- Instead hide each bar separately
-    player.game_view_settings.show_tool_bar = show_tools
+    -- show_controller_gui makes mouse cursor incorrectly indicate selected stack (e.g. wire).
+    player.game_view_settings.show_tool_bar = show_all_controller_bars
     -- note: hiding the quickbar disables quickbar hotkeys for some reason
-    player.game_view_settings.show_quickbar = show_tools
-    player.game_view_settings.show_shortcut_bar = show_tools
+    player.game_view_settings.show_quickbar = show_all_controller_bars
+    player.game_view_settings.show_shortcut_bar = show_shortcuts
 
     if next(state.time_of) ~= nil then
         -- its "nth" tick from 0, not from the moment of subscription
@@ -88,6 +94,7 @@ local function setup(player_index)
     -- Always use `add_state()` for new keys,
     -- `dynamic_hud_enabled` is the only exception.
     add_state(state, "inventory_open", false)
+    add_state(state, "wire_in_cursor", false)
     add_state(state, "time_of", {})
 
     -- It is forbidden to update storage during `on_load`,
@@ -192,3 +199,22 @@ subscriptions:on_event(defines.events.on_research_cancelled, function(event)
         on_active_research_updated(event.tick, event.force)
     end
 end)
+
+subscriptions:on_event(defines.events.on_player_cursor_stack_changed, function(event)
+    local cursor_stack = game.get_player(event.player_index).cursor_stack
+    local is_wire = cursor_stack and cursor_stack.valid_for_read
+        and (
+            cursor_stack.name == "red-wire"
+            or cursor_stack.name == "green-wire"
+            or cursor_stack.name == "copper-wire"
+        )
+        or false
+
+    local state = storage.per_player[event.player_index]
+    if not is_wire and state.wire_in_cursor then
+        state.time_of.wire_in_cursor_dropped = event.tick
+    end
+    state.wire_in_cursor = is_wire
+    update_hud(event.player_index)
+end)
+
