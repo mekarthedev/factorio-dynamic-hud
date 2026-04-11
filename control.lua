@@ -18,6 +18,10 @@ local function update_hud(player_index)
 
     local show_research = show_all
         or state.time_of.research_updated ~= nil
+    local show_surface_list = show_all
+        or state.time_of.inventory_closed ~= nil
+        or state.time_of.controller_changed ~= nil
+        or state.time_of.surface_changed ~= nil
 
     local show_all_controller_bars = show_all
         or state.time_of.inventory_closed ~= nil
@@ -26,7 +30,7 @@ local function update_hud(player_index)
         or state.time_of.wire_in_cursor_dropped ~= nil
 
     player.game_view_settings.show_side_menu = show_all
-    player.game_view_settings.show_surface_list = show_all
+    player.game_view_settings.show_surface_list = show_surface_list
     player.gui.top.visible = show_all
 
     player.game_view_settings.show_research_info = show_research
@@ -218,3 +222,14 @@ subscriptions:on_event(defines.events.on_player_cursor_stack_changed, function(e
     update_hud(event.player_index)
 end)
 
+subscriptions:on_event(defines.events.on_player_controller_changed, function(event)
+    local state = storage.per_player[event.player_index]
+    state.time_of.controller_changed = event.tick
+    update_hud(event.player_index)
+end)
+
+subscriptions:on_event(defines.events.on_player_changed_surface, function(event)
+    local state = storage.per_player[event.player_index]
+    state.time_of.surface_changed = event.tick
+    update_hud(event.player_index)
+end)
