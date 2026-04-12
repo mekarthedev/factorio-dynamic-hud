@@ -34,6 +34,7 @@ local function update_hud(player_index)
     local show_all_controller_bars = show_all
         or state.time_of.inventory_closed ~= nil
     local show_quickbar = show_all_controller_bars
+        or state.time_of.quickbar_updated ~= nil
         or not state.settings.hide_quickbar
     local show_shortcuts = show_all_controller_bars
         or state.wire_in_cursor
@@ -253,5 +254,11 @@ end)
 subscriptions:on_event(defines.events.on_player_changed_surface, function(event)
     local state = storage.per_player[event.player_index]
     state.time_of.surface_changed = event.tick
+    update_hud(event.player_index)
+end)
+
+subscriptions:on_event(defines.events.on_player_set_quick_bar_slot, function(event)
+    local state = storage.per_player[event.player_index]
+    state.time_of.quickbar_updated = event.tick
     update_hud(event.player_index)
 end)
