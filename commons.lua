@@ -1,9 +1,17 @@
 -- `info.lua` is a mod-specific config file
 local info = require("info")
 
+local own_prefix = info.own_namespace .. "_"
+
 function own(name)
-  return info.own_namespace .. "__" .. name
+    return own_prefix .. name
 end
+
+function is_own(name)
+    return string.sub(name, 1, #own_prefix) == own_prefix
+end
+
+ticks_per_second = 60
 
 subscriptions = {
     handlers = {},

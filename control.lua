@@ -1,13 +1,14 @@
 require("commons")
 
--- #todo: also show quckbar when opening a vehicle
--- #todo: show weapon bar during battle
+-- #todo: also show quickbar when opening a vehicle
+-- #todo: show weapons & health bars during battle
 -- #todo: better onboarding message
 -- #todo: test in multiplayer
--- #todo: settings for non-standard or opinionated cases (like minimap)
 -- #todo: check if other gui roots should be hidden, aside from `top`
 
-local hud_update_delay = 4 * 60
+-- The "nth tick" counts from 0, not from the moment of subscribing to the event
+-- More frequent checks mean having measured time intervals closer to ideal time intervals
+local hud_check_period = ticks_per_second / 2
 
 local function update_hud(player_index)
     local state = storage.per_player[player_index]
@@ -18,6 +19,8 @@ local function update_hud(player_index)
 
     local show_research = show_all
         or state.time_of.research_updated ~= nil
+    local show_minimap = show_all
+        or not state.settings.hide_minimap
     local show_surface_list = show_all
         or state.time_of.inventory_closed ~= nil
         or state.time_of.controller_changed ~= nil
@@ -25,11 +28,14 @@ local function update_hud(player_index)
 
     local show_all_controller_bars = show_all
         or state.time_of.inventory_closed ~= nil
+    local show_quickbar = show_all_controller_bars
+        or not state.settings.hide_quickbar
     local show_shortcuts = show_all_controller_bars
         or state.wire_in_cursor
         or state.time_of.wire_in_cursor_dropped ~= nil
 
     player.game_view_settings.show_side_menu = show_all
+    player.game_view_settings.show_minimap = show_minimap
     player.game_view_settings.show_surface_list = show_surface_list
     player.gui.top.visible = show_all
 
@@ -38,21 +44,17 @@ local function update_hud(player_index)
     -- show_controller_gui makes mouse cursor incorrectly indicate selected stack (e.g. wire).
     player.game_view_settings.show_tool_bar = show_all_controller_bars
     -- note: hiding the quickbar disables quickbar hotkeys for some reason
-    player.game_view_settings.show_quickbar = show_all_controller_bars
+    player.game_view_settings.show_quickbar = show_quickbar
     player.game_view_settings.show_shortcut_bar = show_shortcuts
 
     if next(state.time_of) ~= nil then
-        -- its "nth" tick from 0, not from the moment of subscription
-        -- so making checks more frequent
-        -- to make the actual delay closer to the ideal delay
-        local ticks_per_update = math.ceil(hud_update_delay / 4)
-        script.on_nth_tick(ticks_per_update, function(e)
+        script.on_nth_tick(hud_check_period, function(e)
             local wait_more = false
 
             for player_index, state in pairs(storage.per_player) do
                 local update = false
                 for event, tick in pairs(state.time_of) do
-                    if e.tick - tick >= hud_update_delay then
+                    if e.tick - tick >= state.settings.hud_update_delay then
                         state.time_of[event] = nil
                         update = true
                     else
@@ -65,7 +67,7 @@ local function update_hud(player_index)
             end
 
             if not wait_more then
-                script.on_nth_tick(ticks_per_update, nil)
+                script.on_nth_tick(hud_check_period, nil)
             end
         end)
     end
@@ -97,6 +99,13 @@ local function setup(player_index)
     -- does not indicate presence of other keys.
     -- Always use `add_state()` for new keys,
     -- `dynamic_hud_enabled` is the only exception.
+
+    add_state(state, "settings", {})
+    local ps = settings.get_player_settings(player_index)
+    state.settings.hud_update_delay = ps[own"delay"].value * ticks_per_second
+    state.settings.hide_minimap = ps[own"hide-minimap"].value
+    state.settings.hide_quickbar = ps[own"hide-quickbar"].value
+
     add_state(state, "inventory_open", false)
     add_state(state, "wire_in_cursor", false)
     add_state(state, "time_of", {})
@@ -115,6 +124,7 @@ end
 
 script.on_init(function()
     subscriptions:subscribe_all()
+    -- most of "first launch" code should go to `on_configuration_changed`
 end)
 
 script.on_load(function()
@@ -128,6 +138,14 @@ end)
 script.on_configuration_changed(function(event)
     for _, player in pairs(game.players) do
         setup(player.index)
+    end
+end)
+
+script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
+    if not is_own(event.setting) then return end
+
+    if event.setting_type == "runtime-per-user" and event.player_index ~= nil then
+        setup(event.player_index)
     end
 end)
 
