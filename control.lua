@@ -40,12 +40,12 @@ local function update_hud(player_index)
         or state.wire_in_cursor
         or state.time_of.wire_in_cursor_dropped ~= nil
 
+    player.game_view_settings.show_research_info = show_research
     player.game_view_settings.show_side_menu = show_all
+    player.game_view_settings.show_map_view_options = show_all
     player.game_view_settings.show_minimap = show_minimap
     player.game_view_settings.show_surface_list = show_surface_list
     player.gui.top.visible = show_all
-
-    player.game_view_settings.show_research_info = show_research
 
     -- show_controller_gui makes mouse cursor incorrectly indicate selected stack (e.g. wire).
     player.game_view_settings.show_tool_bar = show_all_controller_bars
