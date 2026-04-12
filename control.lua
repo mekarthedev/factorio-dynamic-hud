@@ -21,34 +21,34 @@ local function update_hud(player_index)
 
     local show_all = not state.dynamic_hud_enabled
         or state.inventory_open
+        or state.time_of.inventory_closed ~= nil
 
     local show_research = show_all
         or state.time_of.research_updated ~= nil
     local show_minimap = show_all
         or not state.settings.hide_minimap
+    local show_map_options = show_all
+        or state.time_of.controller_changed ~= nil
     local show_surface_list = show_all
-        or state.time_of.inventory_closed ~= nil
         or state.time_of.controller_changed ~= nil
         or state.time_of.surface_changed ~= nil
 
-    local show_all_controller_bars = show_all
-        or state.time_of.inventory_closed ~= nil
-    local show_quickbar = show_all_controller_bars
+    local show_quickbar = show_all
         or state.time_of.quickbar_updated ~= nil
         or not state.settings.hide_quickbar
-    local show_shortcuts = show_all_controller_bars
+    local show_shortcuts = show_all
         or state.wire_in_cursor
         or state.time_of.wire_in_cursor_dropped ~= nil
 
     player.game_view_settings.show_research_info = show_research
     player.game_view_settings.show_side_menu = show_all
-    player.game_view_settings.show_map_view_options = show_all
+    player.game_view_settings.show_map_view_options = show_map_options
     player.game_view_settings.show_minimap = show_minimap
     player.game_view_settings.show_surface_list = show_surface_list
     player.gui.top.visible = show_all
 
     -- show_controller_gui makes mouse cursor incorrectly indicate selected stack (e.g. wire).
-    player.game_view_settings.show_tool_bar = show_all_controller_bars
+    player.game_view_settings.show_tool_bar = show_all
     -- note: hiding the quickbar disables quickbar hotkeys for some reason
     player.game_view_settings.show_quickbar = show_quickbar
     player.game_view_settings.show_shortcut_bar = show_shortcuts
