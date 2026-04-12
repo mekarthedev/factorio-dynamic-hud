@@ -2,7 +2,6 @@ require("commons")
 
 -- #todo: also show quickbar when opening a vehicle
 -- #todo: show weapons & health bars during battle
--- #todo: better onboarding message
 -- #todo: test in multiplayer
 -- #todo: check if other gui roots should be hidden, aside from `top`
 
@@ -96,8 +95,7 @@ local function setup(player_index)
 
     if state.dynamic_hud_enabled == nil then
         state.dynamic_hud_enabled = true
-        game.get_player(player_index)
-            .print("Your HUD will hide when not needed")
+        game.get_player(player_index).print({"welcome-message"})
     end
 
     -- NOTE:
