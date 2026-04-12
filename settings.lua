@@ -5,7 +5,7 @@ data:extend({
         name = own"delay",
         type = "int-setting",
         setting_type = "runtime-per-user",
-        minimum_value = 1,
+        minimum_value = 0,
         maximum_value = 30,
         default_value = 2,
         order = "0",

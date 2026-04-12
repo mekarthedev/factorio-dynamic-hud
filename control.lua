@@ -14,6 +14,12 @@ local function update_hud(player_index)
     local state = storage.per_player[player_index]
     local player = game.get_player(player_index)
 
+    if state.settings.hud_update_delay == 0 then
+        for event in pairs(state.time_of) do
+            state.time_of[event] = nil
+        end
+    end
+
     local show_all = not state.dynamic_hud_enabled
         or state.inventory_open
 
