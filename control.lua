@@ -2,8 +2,14 @@ require("commons")
 
 -- #todo: also show quickbar when opening a vehicle
 -- #todo: show weapons & health bars during battle
+-- #todo: is fish a "combat" item?
+-- #todo: in train-map view can't open inventory, the button instead closes the view
 -- #todo: test in multiplayer
 -- #todo: check if other gui roots should be hidden, aside from `top`
+-- #todo: literally everything hides with delay
+--        -> maybe refactor to track time per ui element instead of per event
+--              counter example: controller_changed
+--                  -> make it an update parameter: `update_hud(pi, { controller_changed = true })`
 
 -- The "nth tick" counts from 0, not from the moment of subscribing to the event
 -- More frequent checks mean having measured time intervals closer to ideal time intervals
@@ -33,12 +39,16 @@ local function update_hud(player_index)
         or state.time_of.controller_changed ~= nil
         or state.time_of.surface_changed ~= nil
 
+    local show_toolbar = show_all
+        -- #todo: also show while equipment grid ui is open
+        or state.in_cursor == "combat"
+        or state.time_of.combat_cursor_dropped ~= nil
     local show_quickbar = show_all
         or state.time_of.quickbar_updated ~= nil
         or not state.settings.hide_quickbar
     local show_shortcuts = show_all
-        or state.wire_in_cursor
-        or state.time_of.wire_in_cursor_dropped ~= nil
+        or state.in_cursor == "wire"
+        or state.time_of.wire_cursor_dropped ~= nil
 
     player.game_view_settings.show_research_info = show_research
     player.game_view_settings.show_side_menu = show_all
@@ -48,7 +58,7 @@ local function update_hud(player_index)
     player.gui.top.visible = show_all
 
     -- show_controller_gui makes mouse cursor incorrectly indicate selected stack (e.g. wire).
-    player.game_view_settings.show_tool_bar = show_all
+    player.game_view_settings.show_tool_bar = show_toolbar
     -- note: hiding the quickbar disables quickbar hotkeys for some reason
     player.game_view_settings.show_quickbar = show_quickbar
     player.game_view_settings.show_shortcut_bar = show_shortcuts
@@ -111,8 +121,6 @@ local function setup(player_index)
     state.settings.hide_minimap = ps[own"hide-minimap"].value
     state.settings.hide_quickbar = ps[own"hide-quickbar"].value
 
-    add_state(state, "inventory_open", false)
-    add_state(state, "wire_in_cursor", false)
     add_state(state, "time_of", {})
 
     -- It is forbidden to update storage during `on_load`,
@@ -222,27 +230,41 @@ subscriptions:on_event(defines.events.on_research_cancelled, function(event)
     -- the goal is to update HUD only if the queue head was cancelled
     -- if queue is still not empty then `started` would fire for next tech
     if #event.force.research_queue == 0 then
-        log("queue is empty")
         on_active_research_updated(event.tick, event.force)
     end
 end)
 
 subscriptions:on_event(defines.events.on_player_cursor_stack_changed, function(event)
     local cursor_stack = game.get_player(event.player_index).cursor_stack
-    local is_wire = cursor_stack and cursor_stack.valid_for_read
-        and (
-            cursor_stack.name == "red-wire"
+    local in_cursor = nil
+    if cursor_stack and cursor_stack.valid_for_read then
+        if cursor_stack.name == "red-wire"
             or cursor_stack.name == "green-wire"
             or cursor_stack.name == "copper-wire"
-        )
-        or false
+        then
+            in_cursor = "wire"
+        elseif cursor_stack.prototype.group.name == "combat" then
+            in_cursor = "combat"
+        end
+    end
 
     local state = storage.per_player[event.player_index]
-    if not is_wire and state.wire_in_cursor then
-        state.time_of.wire_in_cursor_dropped = event.tick
+    local in_cursor_before = state.in_cursor
+    state.in_cursor = in_cursor
+
+    if in_cursor ~= in_cursor_before then
+        if in_cursor ~= "wire" and in_cursor_before == "wire" then
+            state.time_of.wire_cursor_dropped = event.tick
+        end
+        if in_cursor ~= "combat" and in_cursor_before == "combat" then
+            state.time_of.combat_cursor_dropped = event.tick
+        end
+
+        -- Note: cursor_stack_changed might be called frequently
+        -- e.g. when building a belt by dragging.
+        -- No need to re-update when there were no changes to cursor kind.
+        update_hud(event.player_index)
     end
-    state.wire_in_cursor = is_wire
-    update_hud(event.player_index)
 end)
 
 subscriptions:on_event(defines.events.on_player_controller_changed, function(event)
