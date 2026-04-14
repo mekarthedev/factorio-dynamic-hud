@@ -1,6 +1,5 @@
 require("commons")
 
--- #todo: also show quickbar when opening a vehicle
 -- #todo: show weapons & health bars during battle
 -- #todo: is fish a "combat" item?
 -- #todo: in train-map view can't open inventory, the button instead closes the view
@@ -10,6 +9,7 @@ require("commons")
 --        -> maybe refactor to track time per ui element instead of per event
 --              counter example: controller_changed
 --                  -> make it an update parameter: `update_hud(pi, { controller_changed = true })`
+--        ^ not everything: no need to delay when closing entities' views
 
 -- The "nth tick" counts from 0, not from the moment of subscribing to the event
 -- More frequent checks mean having measured time intervals closer to ideal time intervals
@@ -26,36 +26,49 @@ local function update_hud(player_index)
     end
 
     local show_all = not state.dynamic_hud_enabled
-        or state.inventory_open
+        or state.opened_gui == defines.gui_type.controller
         or state.time_of.inventory_closed ~= nil
 
     local show_research = show_all
         or state.time_of.research_updated ~= nil
+    local show_side_menu = show_all
+        or state.opened_gui == defines.gui_type.logistic
+        or state.opened_gui == defines.gui_type.production
+        or state.opened_gui == defines.gui_type.trains
+        or state.opened_gui == defines.gui_type.achievement
+        or state.opened_gui == defines.gui_type.bonus
     local show_minimap = show_all
         or not state.settings.hide_minimap
+
     local show_map_options = show_all
         or state.time_of.controller_changed ~= nil
     local show_surface_list = show_all
         or state.time_of.controller_changed ~= nil
         or state.time_of.surface_changed ~= nil
 
-    local show_toolbar = show_all
-        -- #todo: also show while equipment grid ui is open
+    local show_controller_bars = show_all
+        or state.opened_gui == defines.gui_type.item
+        or state.opened_gui == defines.gui_type.entity
+        or state.opened_gui == defines.gui_type.equipment
+        or state.opened_gui == defines.gui_type.other_player
+        or state.opened_gui == defines.gui_type.blueprint_library
+        or state.opened_gui == defines.gui_type.custom
+    local show_toolbar = show_controller_bars
         or state.in_cursor == "combat"
         or state.time_of.combat_cursor_dropped ~= nil
-    local show_quickbar = show_all
+    local show_quickbar = show_controller_bars
         or state.time_of.quickbar_updated ~= nil
         or not state.settings.hide_quickbar
-    local show_shortcuts = show_all
+    local show_shortcuts = show_controller_bars
         or state.in_cursor == "wire"
         or state.time_of.wire_cursor_dropped ~= nil
 
     player.game_view_settings.show_research_info = show_research
-    player.game_view_settings.show_side_menu = show_all
+    player.game_view_settings.show_side_menu = show_side_menu
     player.game_view_settings.show_map_view_options = show_map_options
     player.game_view_settings.show_minimap = show_minimap
     player.game_view_settings.show_surface_list = show_surface_list
-    player.gui.top.visible = show_all
+    player.gui.top.visible = show_side_menu
 
     -- show_controller_gui makes mouse cursor incorrectly indicate selected stack (e.g. wire).
     player.game_view_settings.show_tool_bar = show_toolbar
@@ -194,19 +207,24 @@ subscriptions:on_event(defines.events.on_cutscene_finished, function(event)
 end)
 
 subscriptions:on_event(defines.events.on_gui_opened, function(event)
-    if event.gui_type ~= defines.gui_type.controller then return end
-
+    local player = game.get_player(event.player_index)
     local state = storage.per_player[event.player_index]
-    state.inventory_open = true
+
+    state.opened_gui = player.opened_gui_type
+
     update_hud(event.player_index)
 end)
 
 subscriptions:on_event(defines.events.on_gui_closed, function(event)
-    if event.gui_type ~= defines.gui_type.controller then return end
-
+    local player = game.get_player(event.player_index)
     local state = storage.per_player[event.player_index]
-    state.inventory_open = false
-    state.time_of.inventory_closed = event.tick
+
+    state.opened_gui = player.opened_gui_type
+
+    if event.gui_type == defines.gui_type.controller then
+        state.time_of.inventory_closed = event.tick
+    end
+
     update_hud(event.player_index)
 end)
 
