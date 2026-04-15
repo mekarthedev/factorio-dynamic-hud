@@ -34,6 +34,32 @@ subscriptions = {
     end,
 }
 
+-- Note: There are many functions/properties in Factorio API
+-- that can be accessed "only if entity is a Vehicle".
+-- This is the only known way to check if an entity is a "vehicle".
+is_vehicle_type = {
+    ["car"] = true,
+    ["spider-vehicle"] = true,
+    ["locomotive"] = true,
+    -- technically these are also vehicles
+    ["cargo-wagon"] = true,
+    ["fluid-wagon"] = true,
+    ["artillery-wagon"] = true
+}
+
+-- get the player controlling this entity (character, car, etc.)
+function player_index_of(entity)
+    local character = nil
+    if entity.type == "character" then
+        character = entity
+    elseif is_vehicle_type[entity.type] then
+        character = entity.get_driver()
+    end
+    return character and character.player and character.player.index
+end
+
+-- Common lua utilities
+
 function every(tbl, predicate)
     for _, value in pairs(tbl) do
         if not predicate(value) then

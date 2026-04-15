@@ -1,6 +1,5 @@
 require("commons")
 
--- #todo: show weapons & health bars during battle
 -- #todo: is fish a "combat" item?
 -- #todo: in train-map view can't open inventory, the button instead closes the view
 -- #todo: test in multiplayer
@@ -54,6 +53,7 @@ local function update_hud(player_index)
         or state.opened_gui == defines.gui_type.blueprint_library
         or state.opened_gui == defines.gui_type.custom
     local show_toolbar = show_controller_bars
+        or state.time_of.involved_in_combat ~= nil
         or state.in_cursor == "combat"
         or state.time_of.combat_cursor_dropped ~= nil
     local show_quickbar = show_controller_bars
@@ -282,6 +282,24 @@ subscriptions:on_event(defines.events.on_player_cursor_stack_changed, function(e
         -- e.g. when building a belt by dragging.
         -- No need to re-update when there were no changes to cursor kind.
         update_hud(event.player_index)
+    end
+end)
+
+local function on_involved_in_combat(player_index, tick)
+    local state = storage.per_player[player_index]
+    state.time_of.involved_in_combat = tick
+    update_hud(player_index)
+end
+
+subscriptions:on_event(defines.events.on_entity_damaged, function(event)
+    local cause_player_index = event.cause and player_index_of(event.cause)
+    if cause_player_index then
+        on_involved_in_combat(cause_player_index, event.tick)
+    end
+
+    local victim_player_index = event.entity and player_index_of(event.entity)
+    if victim_player_index then
+        on_involved_in_combat(victim_player_index, event.tick)
     end
 end)
 
