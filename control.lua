@@ -1,5 +1,6 @@
 require("commons")
 
+-- #todo: allow other mods to difine when they are allowed to be hidden
 -- #todo: is fish a "combat" item?
 -- #todo: in train-map view can't open inventory, the button instead closes the view
 -- #todo: test in multiplayer
@@ -59,6 +60,7 @@ local function update_hud(player_index)
     local show_quickbar = show_controller_bars
         or state.time_of.quickbar_updated ~= nil
         or not state.settings.hide_quickbar
+        or (state.settings.show_quickbar_in_combat and state.time_of.involved_in_combat ~= nil)
     local show_shortcuts = show_controller_bars
         or state.in_cursor == "wire"
         or state.time_of.wire_cursor_dropped ~= nil
@@ -133,6 +135,7 @@ local function setup(player_index)
     state.settings.hud_update_delay = ps[own"delay"].value * ticks_per_second
     state.settings.hide_minimap = ps[own"hide-minimap"].value
     state.settings.hide_quickbar = ps[own"hide-quickbar"].value
+    state.settings.show_quickbar_in_combat = ps[own"show-quickbar-in-combat"].value
 
     add_state(state, "time_of", {})
 

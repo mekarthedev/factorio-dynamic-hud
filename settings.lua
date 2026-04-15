@@ -24,4 +24,11 @@ data:extend({
         default_value = true,
         order = "1",
     },
+    {
+        name = own"show-quickbar-in-combat",
+        type = "bool-setting",
+        setting_type = "runtime-per-user",
+        default_value = true,
+        order = "1.1",
+    },
 })
