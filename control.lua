@@ -1,10 +1,13 @@
 require("commons")
 
--- #todo: allow other mods to difine when they are allowed to be hidden
+-- #todo: allow other mods to define when they are allowed to be hidden
+--        - StatsGui uses gui.screen to show stats similar to ups
+--        - TaskList shows list of tasks in "keep open" mode
 -- #todo: is fish a "combat" item?
 -- #todo: in train-map view can't open inventory, the button instead closes the view
 -- #todo: test in multiplayer
--- #todo: check if other gui roots should be hidden, aside from `top`
+-- #todo: mention in welcome message how to properly uninstall the mod
+-- #todo: write description
 -- #todo: literally everything hides with delay
 --        -> maybe refactor to track time per ui element instead of per event
 --              counter example: controller_changed
@@ -24,6 +27,9 @@ local function update_hud(player_index)
             state.time_of[event] = nil
         end
     end
+
+    -- Note: Other mods might forget to properly clear `player.opened` when closing their UIs.
+    --   As a result in Factorio v2.0.76 `on_gui_closed` doesn't fire and HUD isn't getting updated.
 
     local show_all = not state.dynamic_hud_enabled
         or state.opened_gui == defines.gui_type.controller
@@ -52,7 +58,6 @@ local function update_hud(player_index)
         or state.opened_gui == defines.gui_type.equipment
         or state.opened_gui == defines.gui_type.other_player
         or state.opened_gui == defines.gui_type.blueprint_library
-        or state.opened_gui == defines.gui_type.custom
     local show_toolbar = show_controller_bars
         or state.time_of.involved_in_combat ~= nil
         or state.in_cursor == "combat"
@@ -65,12 +70,21 @@ local function update_hud(player_index)
         or state.in_cursor == "wire"
         or state.time_of.wire_cursor_dropped ~= nil
 
+    local show_mod_top = show_all or not state.settings.hide_top
+    local show_mod_left = show_all or not state.settings.hide_left
+    local show_goal = show_all or not state.settings.hide_goal
+
     player.game_view_settings.show_research_info = show_research
     player.game_view_settings.show_side_menu = show_side_menu
     player.game_view_settings.show_map_view_options = show_map_options
     player.game_view_settings.show_minimap = show_minimap
     player.game_view_settings.show_surface_list = show_surface_list
-    player.gui.top.visible = show_side_menu
+
+    player.gui.top.visible = show_mod_top
+    player.gui.left.visible = show_mod_left
+    -- as of Factorio v2.0.76, goal.visible doesn't work, goal cannot be hidden
+    player.gui.goal.visible = show_goal
+    -- Note: gui.relative is already all about temporary ui elements
 
     -- show_controller_gui makes mouse cursor incorrectly indicate selected stack (e.g. wire).
     player.game_view_settings.show_tool_bar = show_toolbar
@@ -136,6 +150,9 @@ local function setup(player_index)
     state.settings.hide_minimap = ps[own"hide-minimap"].value
     state.settings.hide_quickbar = ps[own"hide-quickbar"].value
     state.settings.show_quickbar_in_combat = ps[own"show-quickbar-in-combat"].value
+    state.settings.hide_top = ps[own"hide-top"].value
+    state.settings.hide_left = ps[own"hide-left"].value
+    state.settings.hide_goal = ps[own"hide-goal"].value
 
     add_state(state, "time_of", {})
 

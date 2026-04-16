@@ -31,4 +31,25 @@ data:extend({
         default_value = true,
         order = "1.1",
     },
+    {
+        name = own"hide-top",
+        type = "bool-setting",
+        setting_type = "runtime-per-user",
+        default_value = true,
+        order = "2.1",
+    },
+    {
+        name = own"hide-left",
+        type = "bool-setting",
+        setting_type = "runtime-per-user",
+        default_value = true,
+        order = "2.2",
+    },
+    {
+        name = own"hide-goal",
+        type = "bool-setting",
+        setting_type = "runtime-per-user",
+        default_value = true,
+        order = "2.3",
+    },
 })
