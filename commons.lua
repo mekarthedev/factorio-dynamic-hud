@@ -49,13 +49,20 @@ is_vehicle_type = {
 
 -- get the player controlling this entity (character, car, etc.)
 function player_index_of(entity)
-    local character = nil
+    local player = nil
     if entity.type == "character" then
-        character = entity
+        player = entity.player
+
     elseif is_vehicle_type[entity.type] then
-        character = entity.get_driver()
+        local driver = entity.get_driver()
+        -- driver is player when driving remotely
+        if driver and not driver.is_player() then
+            player = driver.player
+        else
+            player = driver
+        end
     end
-    return character and character.player and character.player.index
+    return player and player.index
 end
 
 -- Common lua utilities
