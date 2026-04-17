@@ -4,6 +4,8 @@ require("commons")
 --        - StatsGui uses gui.screen to show stats similar to ups
 --        - TaskList shows list of tasks in "keep open" mode
 -- #todo: is fish a "combat" item?
+-- #todo: don't show character's wepons bar when inside a vehicle
+-- #todo: a setting to show minimap while in a vehicle
 -- #todo: in train-map view can't open inventory, the button instead closes the view
 -- #todo: test in multiplayer
 -- #todo: mention in welcome message how to properly uninstall the mod
@@ -312,14 +314,27 @@ local function on_involved_in_combat(player_index, tick)
 end
 
 subscriptions:on_event(defines.events.on_entity_damaged, function(event)
-    local cause_player_index = event.cause and player_index_of(event.cause)
-    if cause_player_index then
-        on_involved_in_combat(cause_player_index, event.tick)
-    end
+    local attacker = event.cause or event.source  -- it is unclear if both can be nil at the same time
+    local victim = event.entity
 
-    local victim_player_index = event.entity and player_index_of(event.entity)
-    if victim_player_index then
-        on_involved_in_combat(victim_player_index, event.tick)
+    -- Don't consider it "combat" when damaging or being damaged by environment
+    -- (unless attacker and victim are from opposing forces, or are characters).
+    -- Note: for some reason character is considered environment.
+    if attacker and attacker.force.is_enemy(victim.force)
+        or attacker and attacker.prototype.name == "character"
+        or victim.prototype.name == "character"
+        or attacker and attacker.prototype.group.name ~= "environment"
+            and victim.prototype.group.name ~= "environment"
+    then
+        local attacker_player_index = attacker and player_index_of(attacker)
+        if attacker_player_index then
+            on_involved_in_combat(attacker_player_index, event.tick)
+        end
+
+        local victim_player_index = player_index_of(victim)
+        if victim_player_index then
+            on_involved_in_combat(victim_player_index, event.tick)
+        end
     end
 end)
 
