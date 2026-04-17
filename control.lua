@@ -3,7 +3,6 @@ require("commons")
 -- #todo: allow other mods to define when they are allowed to be hidden
 --        - StatsGui uses gui.screen to show stats similar to ups
 --        - TaskList shows list of tasks in "keep open" mode
--- #todo: is fish a "combat" item?
 -- #todo: don't show character's wepons bar when inside a vehicle
 -- #todo: a setting to show minimap while in a vehicle
 -- #todo: in train-map view can't open inventory, the button instead closes the view
@@ -60,14 +59,15 @@ local function update_hud(player_index)
         or state.opened_gui == defines.gui_type.equipment
         or state.opened_gui == defines.gui_type.other_player
         or state.opened_gui == defines.gui_type.blueprint_library
-    local show_toolbar = show_controller_bars
-        or state.time_of.involved_in_combat ~= nil
+    local in_combat = 
+        state.time_of.involved_in_combat ~= nil
         or state.in_cursor == "combat"
         or state.time_of.combat_cursor_dropped ~= nil
+    local show_toolbar = show_controller_bars or in_combat
     local show_quickbar = show_controller_bars
         or state.time_of.quickbar_updated ~= nil
         or not state.settings.hide_quickbar
-        or (state.settings.show_quickbar_in_combat and state.time_of.involved_in_combat ~= nil)
+        or (state.settings.show_quickbar_in_combat and in_combat)
     local show_shortcuts = show_controller_bars
         or state.in_cursor == "wire"
         or state.time_of.wire_cursor_dropped ~= nil
@@ -283,7 +283,12 @@ subscriptions:on_event(defines.events.on_player_cursor_stack_changed, function(e
             or cursor_stack.name == "copper-wire"
         then
             in_cursor = "wire"
-        elseif cursor_stack.prototype.group.name == "combat" then
+
+        elseif cursor_stack.prototype.group.name == "combat"
+            or cursor_stack.prototype.capsule_action  -- e.g. fish is not in combat group
+                and cursor_stack.name ~= "cliff-explosives"  -- not for combat
+                and cursor_stack.name ~= "artillery-targeting-remote"  -- no direct involvment
+        then
             in_cursor = "combat"
         end
     end
