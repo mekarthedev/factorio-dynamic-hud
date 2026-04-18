@@ -4,7 +4,6 @@ require("commons")
 --        - StatsGui uses gui.screen to show stats similar to ups
 --        - TaskList shows list of tasks in "keep open" mode
 -- #todo: don't show character's wepons bar when inside a vehicle
--- #todo: a setting to show minimap while in a vehicle
 -- #todo: in train-map view can't open inventory, the button instead closes the view
 -- #todo: test in multiplayer
 -- #todo: mention in welcome message how to properly uninstall the mod
@@ -45,6 +44,7 @@ local function update_hud(player_index)
         or state.opened_gui == defines.gui_type.achievement
         or state.opened_gui == defines.gui_type.bonus
     local show_minimap = show_all
+        or (state.is_in_vehicle and state.settings.show_minimap_while_driving)
         or not state.settings.hide_minimap
 
     local show_map_options = show_all
@@ -67,7 +67,7 @@ local function update_hud(player_index)
     local show_quickbar = show_controller_bars
         or state.time_of.quickbar_updated ~= nil
         or not state.settings.hide_quickbar
-        or (state.settings.show_quickbar_in_combat and in_combat)
+        or (in_combat and state.settings.show_quickbar_in_combat)
     local show_shortcuts = show_controller_bars
         or state.in_cursor == "wire"
         or state.time_of.wire_cursor_dropped ~= nil
@@ -121,51 +121,44 @@ local function update_hud(player_index)
 end
 
 local function setup(player_index)
-    local function add_state(state, key, initial_value)
-        if state[key] == nil then
-            state[key] = initial_value
-        end
-    end
+    -- Note:
+    -- After mod is published, presence of some keys
+    -- does not indicate presence of other keys.
+    -- Always use `set_default()` to add new keys,
+    -- `dynamic_hud_enabled` should be the only exception.
 
-    if not storage.per_player then
-        storage.per_player = {}
-    end
-    if not storage.per_player[player_index] then
-        storage.per_player[player_index] = {}
-    end
-    local state = storage.per_player[player_index]
+    -- Note:
+    -- It is forbidden to update storage during `on_load`,
+    -- and `on_configuration_changed` isn't affected by changes in `control.lua`,
+    -- only by a change in the mod version.
+    --
+    -- So, when in development, `own"activate"` have to be used
+    -- to re-run setup after adding a new state key.
+    --
+    -- For that reason make sure `setup` is always idempotent.
+
+    set_default(storage, "per_player", {})
+    set_default(storage, "entity_related_players", {})
+
+    local state = set_default(storage.per_player, player_index, {})
 
     if state.dynamic_hud_enabled == nil then
         state.dynamic_hud_enabled = true
         game.get_player(player_index).print({"welcome-message"})
     end
 
-    -- NOTE:
-    -- after mod is published, presence of some keys
-    -- does not indicate presence of other keys.
-    -- Always use `add_state()` for new keys,
-    -- `dynamic_hud_enabled` is the only exception.
-
-    add_state(state, "settings", {})
+    set_default(state, "settings", {})
     local ps = settings.get_player_settings(player_index)
     state.settings.hud_update_delay = ps[own"delay"].value * ticks_per_second
     state.settings.hide_minimap = ps[own"hide-minimap"].value
+    state.settings.show_minimap_while_driving = ps[own"show-minimap-while-driving"].value
     state.settings.hide_quickbar = ps[own"hide-quickbar"].value
     state.settings.show_quickbar_in_combat = ps[own"show-quickbar-in-combat"].value
     state.settings.hide_top = ps[own"hide-top"].value
     state.settings.hide_left = ps[own"hide-left"].value
     state.settings.hide_goal = ps[own"hide-goal"].value
 
-    add_state(state, "time_of", {})
-
-    -- It is forbidden to update storage during `on_load`,
-    -- and `on_configuration_changed` isn't affected by changes in `control.lua`,
-    -- only by a change in the mod version.
-    --
-    -- So, when in development, a `own"activate"` have to be used
-    -- to re-run setup after adding a new state key.
-    --
-    -- For that reason make sure `setup` is always idempotent.
+    set_default(state, "time_of", {})
 
     update_hud(player_index)
 end
@@ -341,6 +334,39 @@ subscriptions:on_event(defines.events.on_entity_damaged, function(event)
             on_involved_in_combat(victim_player_index, event.tick)
         end
     end
+end)
+
+subscriptions:on_event(defines.events.on_player_driving_changed_state, function(event)
+    local state = storage.per_player[event.player_index]
+    local player = game.get_player(event.player_index)
+    state.is_in_vehicle = player.driving
+    update_hud(event.player_index)
+
+    local vehicle = event.entity or player.vehicle
+    if vehicle then
+        local related_players = set_default(storage.entity_related_players, vehicle.unit_number, {})
+        if state.is_in_vehicle then
+            related_players[event.player_index] = true
+            script.register_on_object_destroyed(vehicle)
+        else
+            related_players[event.player_index] = nil
+        end
+    else
+        log("on_player_driving_changed_state: error: no vehicle found")
+    end
+end)
+
+subscriptions:on_event(defines.events.on_object_destroyed, function(event)
+    if event.type ~= defines.target_type.entity then return end
+    local related_players = storage.entity_related_players[event.useful_id]
+    if not related_players then return end
+
+    for player_index in pairs(related_players) do
+        local state = storage.per_player[player_index]
+        state.is_in_vehicle = game.get_player(player_index).driving
+        update_hud(player_index)
+    end
+    storage.entity_related_players[event.useful_id] = nil
 end)
 
 subscriptions:on_event(defines.events.on_player_controller_changed, function(event)

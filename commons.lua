@@ -67,6 +67,15 @@ end
 
 -- Common lua utilities
 
+function set_default(table, key, initial_value)
+    local value = table[key]
+    if value == nil then
+        table[key] = initial_value
+        value = initial_value
+    end
+    return value
+end
+
 function every(tbl, predicate)
     for _, value in pairs(tbl) do
         if not predicate(value) then
