@@ -3,20 +3,24 @@ require("commons")
 -- #todo: allow other mods to define when they are allowed to be hidden
 --        - StatsGui uses gui.screen to show stats similar to ups
 --        - TaskList shows list of tasks in "keep open" mode
--- #todo: don't show character's wepons bar when inside a vehicle
--- #todo: in train-map view can't open inventory, the button instead closes the view
 -- #todo: test in multiplayer
--- #todo: mention in welcome message how to properly uninstall the mod
--- #todo: write description
 -- #todo: literally everything hides with delay
 --        -> maybe refactor to track time per ui element instead of per event
 --              counter example: controller_changed
 --                  -> make it an update parameter: `update_hud(pi, { controller_changed = true })`
 --        ^ not everything: no need to delay when closing entities' views
+-- #todo: make state consistent with reality when turning hiding off then on
+--         - also during setup
 
 -- The "nth tick" counts from 0, not from the moment of subscribing to the event
 -- More frequent checks mean having measured time intervals closer to ideal time intervals
 local hud_check_period = ticks_per_second / 2
+
+local driving_mode = {
+    not_driving = 0,
+    by_character = 1,
+    by_player = 2,  -- remote driving
+}
 
 local function update_hud(player_index)
     local state = storage.per_player[player_index]
@@ -44,7 +48,7 @@ local function update_hud(player_index)
         or state.opened_gui == defines.gui_type.achievement
         or state.opened_gui == defines.gui_type.bonus
     local show_minimap = show_all
-        or (state.is_in_vehicle and state.settings.show_minimap_while_driving)
+        or (state.driving_mode ~= driving_mode.not_driving and state.settings.show_minimap_while_driving)
         or not state.settings.hide_minimap
 
     local show_map_options = show_all
@@ -59,11 +63,16 @@ local function update_hud(player_index)
         or state.opened_gui == defines.gui_type.equipment
         or state.opened_gui == defines.gui_type.other_player
         or state.opened_gui == defines.gui_type.blueprint_library
+        -- A workaround: the vehicle toolbar cannot be hidden while driving with character
+        -- but is affected by `show_tool_bar` while remote driving.
+        -- If hidden in remote, will not show up for vehicle driven by character until forcefully toggled on
+        or state.time_of.controller_changed ~= nil
     local in_combat = 
         state.time_of.involved_in_combat ~= nil
-        or state.in_cursor == "combat"
+        or state.in_cursor == "combat"  -- #todo: use int enum
         or state.time_of.combat_cursor_dropped ~= nil
-    local show_toolbar = show_controller_bars or in_combat
+    local show_toolbar = show_controller_bars
+        or (in_combat and state.driving_mode ~= driving_mode.by_character)
     local show_quickbar = show_controller_bars
         or state.time_of.quickbar_updated ~= nil
         or not state.settings.hide_quickbar
@@ -159,6 +168,7 @@ local function setup(player_index)
     state.settings.hide_goal = ps[own"hide-goal"].value
 
     set_default(state, "time_of", {})
+    set_default(state, "driving_mode", driving_mode.not_driving)
 
     update_hud(player_index)
 end
@@ -336,24 +346,36 @@ subscriptions:on_event(defines.events.on_entity_damaged, function(event)
     end
 end)
 
+local function read_driving_mode(state, player)
+    if not player.driving or not player.vehicle then  -- it's uknown if vehicle can be nil when driving
+        state.driving_mode = driving_mode.not_driving
+    elseif player.vehicle.get_driver().is_player() then
+        state.driving_mode = driving_mode.by_player
+    else
+        state.driving_mode = driving_mode.by_character
+    end
+end
+
 subscriptions:on_event(defines.events.on_player_driving_changed_state, function(event)
     local state = storage.per_player[event.player_index]
     local player = game.get_player(event.player_index)
-    state.is_in_vehicle = player.driving
-    update_hud(event.player_index)
+
+    read_driving_mode(state, player)
 
     local vehicle = event.entity or player.vehicle
     if vehicle then
         local related_players = set_default(storage.entity_related_players, vehicle.unit_number, {})
-        if state.is_in_vehicle then
+        if state.driving_mode ~= driving_mode.not_driving then
             related_players[event.player_index] = true
             script.register_on_object_destroyed(vehicle)
         else
             related_players[event.player_index] = nil
         end
     else
-        log("on_player_driving_changed_state: error: no vehicle found")
+        log("on_player_driving_changed_state: error: driving state changed without a vehicle")
     end
+
+    update_hud(event.player_index)
 end)
 
 subscriptions:on_event(defines.events.on_object_destroyed, function(event)
@@ -362,8 +384,7 @@ subscriptions:on_event(defines.events.on_object_destroyed, function(event)
     if not related_players then return end
 
     for player_index in pairs(related_players) do
-        local state = storage.per_player[player_index]
-        state.is_in_vehicle = game.get_player(player_index).driving
+        read_driving_mode(storage.per_player[player_index], game.get_player(player_index))
         update_hud(player_index)
     end
     storage.entity_related_players[event.useful_id] = nil
@@ -372,6 +393,9 @@ end)
 subscriptions:on_event(defines.events.on_player_controller_changed, function(event)
     local state = storage.per_player[event.player_index]
     state.time_of.controller_changed = event.tick
+    -- It is possible to sit into a vehicle and then remotely "enter" another vehicle.
+    -- `on_player_driving_changed_state` won't fire when going back.
+    read_driving_mode(state, game.get_player(event.player_index))
     update_hud(event.player_index)
 end)
 
