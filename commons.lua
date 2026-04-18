@@ -15,6 +15,7 @@ ticks_per_second = 60
 
 subscriptions = {
     handlers = {},
+    subscribed = false,
 
     -- #todo: should `on_event` after `subscribe_all` be supported?
     on_event = function(self, event, handler)
@@ -25,12 +26,14 @@ subscriptions = {
         for event, handler in pairs(self.handlers) do
             script.on_event(event, handler)
         end
+        self.subscribed = true
     end,
 
     unsubscribe_all = function(self)
         for event in pairs(self.handlers) do
             script.on_event(event, nil)
         end
+        self.subscribed = false
     end,
 }
 

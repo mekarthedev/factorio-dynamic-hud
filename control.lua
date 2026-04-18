@@ -9,8 +9,6 @@ require("commons")
 --              counter example: controller_changed
 --                  -> make it an update parameter: `update_hud(pi, { controller_changed = true })`
 --        ^ not everything: no need to delay when closing entities' views
--- #todo: make state consistent with reality when turning hiding off then on
---         - also during setup
 
 -- The "nth tick" counts from 0, not from the moment of subscribing to the event
 -- More frequent checks mean having measured time intervals closer to ideal time intervals
@@ -21,6 +19,23 @@ local driving_mode = {
     by_character = 1,
     by_player = 2,  -- remote driving
 }
+
+-- Put functions reading current game state here.
+-- `function sync.some_data(state, player)`
+-- No need to try to sync `time_of`. It will be cleared after re-sync.
+-- `entity_related_players` will be cleared before global re-sync.
+local sync = {}
+
+local function sync_state(player_index)
+    local state = storage.per_player[player_index]
+    local player = game.get_player(player_index)
+
+    for _, sync_part in pairs(sync) do
+        sync_part(state, player)
+    end
+
+    state.time_of = {}
+end
 
 local function update_hud(player_index)
     local state = storage.per_player[player_index]
@@ -33,7 +48,8 @@ local function update_hud(player_index)
     end
 
     -- Note: Other mods might forget to properly clear `player.opened` when closing their UIs.
-    --   As a result in Factorio v2.0.76 `on_gui_closed` doesn't fire and HUD isn't getting updated.
+    --   In that case, as of Factorio v2.0.76, `on_gui_closed` doesn't fire.
+    --   Cannot rely on gui_type.custom to control HUD state, as a result.
 
     local show_all = not state.dynamic_hud_enabled
         or state.opened_gui == defines.gui_type.controller
@@ -170,8 +186,18 @@ local function setup(player_index)
     set_default(state, "time_of", {})
     set_default(state, "driving_mode", driving_mode.not_driving)
 
+    sync_state(player_index)
     update_hud(player_index)
 end
+
+local function setup_all()
+    storage.entity_related_players = {}
+    for _, player in pairs(game.players) do
+        setup(player.index)
+    end
+end
+
+--------
 
 script.on_init(function()
     subscriptions:subscribe_all()
@@ -179,17 +205,13 @@ script.on_init(function()
 end)
 
 script.on_load(function()
-    if some(storage.per_player,
-        function(state) return state.dynamic_hud_enabled end)
-    then
+    if some(storage.per_player, function(s) return s.dynamic_hud_enabled end) then
         subscriptions:subscribe_all()
     end
 end)
 
 script.on_configuration_changed(function(event)
-    for _, player in pairs(game.players) do
-        setup(player.index)
-    end
+    setup_all()
 end)
 
 script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
@@ -207,19 +229,29 @@ end)
 script.on_event(own"activate", function(event)
     local state = storage.per_player[event.player_index]
     state.dynamic_hud_enabled = not state.dynamic_hud_enabled
-    -- for ease of mod development, re-run `setup` here instead of `update_hud`
-    -- see `setup()` for details
-    setup(event.player_index)
 
     if state.dynamic_hud_enabled then
-        subscriptions:subscribe_all()
+        -- run `setup` instead of `update_hud` to synchronize state with possibly changed reality
+        if not subscriptions.subscribed then
+            subscriptions:subscribe_all()
+            setup_all()
+        else
+            -- Technically this is not needed because as long as `subscriptions` is up
+            -- every player has their state up-to-date regardless of their `dynamic_hud_enabled`.
+            -- Might be helpful in development.
+            setup(event.player_index)
+        end
 
-    elseif every(storage.per_player,
-        function(state) return not state.dynamic_hud_enabled end)
-    then
-        subscriptions:unsubscribe_all()
+    else
+        update_hud(event.player_index)
+
+        if every(storage.per_player, function(s) return not s.dynamic_hud_enabled end) then
+            subscriptions:unsubscribe_all()
+        end
     end
 end)
+
+--------
 
 -- The system UI elements somehow aren't affected
 -- while the new game cutscene is playing
@@ -231,11 +263,15 @@ subscriptions:on_event(defines.events.on_cutscene_finished, function(event)
     update_hud(event.player_index)
 end)
 
+function sync.opened_gui(state, player)
+    state.opened_gui = player.opened_gui_type
+end
+
 subscriptions:on_event(defines.events.on_gui_opened, function(event)
     local player = game.get_player(event.player_index)
     local state = storage.per_player[event.player_index]
 
-    state.opened_gui = player.opened_gui_type
+    sync.opened_gui(state, player)
 
     update_hud(event.player_index)
 end)
@@ -244,7 +280,7 @@ subscriptions:on_event(defines.events.on_gui_closed, function(event)
     local player = game.get_player(event.player_index)
     local state = storage.per_player[event.player_index]
 
-    state.opened_gui = player.opened_gui_type
+    sync.opened_gui(state, player)
 
     if event.gui_type == defines.gui_type.controller then
         state.time_of.inventory_closed = event.tick
@@ -277,8 +313,8 @@ subscriptions:on_event(defines.events.on_research_cancelled, function(event)
     end
 end)
 
-subscriptions:on_event(defines.events.on_player_cursor_stack_changed, function(event)
-    local cursor_stack = game.get_player(event.player_index).cursor_stack
+function sync.in_cursor(state, player)
+    local cursor_stack = player.cursor_stack
     local in_cursor = nil
     if cursor_stack and cursor_stack.valid_for_read then
         if cursor_stack.name == "red-wire"
@@ -295,16 +331,20 @@ subscriptions:on_event(defines.events.on_player_cursor_stack_changed, function(e
             in_cursor = "combat"
         end
     end
-
-    local state = storage.per_player[event.player_index]
-    local in_cursor_before = state.in_cursor
     state.in_cursor = in_cursor
+end
 
-    if in_cursor ~= in_cursor_before then
-        if in_cursor ~= "wire" and in_cursor_before == "wire" then
+subscriptions:on_event(defines.events.on_player_cursor_stack_changed, function(event)
+    local state = storage.per_player[event.player_index]
+    local player = game.get_player(event.player_index)
+    local in_cursor_before = state.in_cursor
+    sync.in_cursor(state, player)
+
+    if state.in_cursor ~= in_cursor_before then
+        if state.in_cursor ~= "wire" and in_cursor_before == "wire" then
             state.time_of.wire_cursor_dropped = event.tick
         end
-        if in_cursor ~= "combat" and in_cursor_before == "combat" then
+        if state.in_cursor ~= "combat" and in_cursor_before == "combat" then
             state.time_of.combat_cursor_dropped = event.tick
         end
 
@@ -346,13 +386,21 @@ subscriptions:on_event(defines.events.on_entity_damaged, function(event)
     end
 end)
 
-local function read_driving_mode(state, player)
+function sync.driving_mode(state, player)
     if not player.driving or not player.vehicle then  -- it's uknown if vehicle can be nil when driving
         state.driving_mode = driving_mode.not_driving
-    elseif player.vehicle.get_driver().is_player() then
-        state.driving_mode = driving_mode.by_player
     else
-        state.driving_mode = driving_mode.by_character
+        if player.vehicle.get_driver().is_player() then
+            state.driving_mode = driving_mode.by_player
+        else
+            state.driving_mode = driving_mode.by_character
+        end
+
+        local related_players = set_default(
+            storage.entity_related_players, player.vehicle.unit_number, {}
+        )
+        related_players[player.index] = true
+        script.register_on_object_destroyed(player.vehicle)
     end
 end
 
@@ -360,19 +408,18 @@ subscriptions:on_event(defines.events.on_player_driving_changed_state, function(
     local state = storage.per_player[event.player_index]
     local player = game.get_player(event.player_index)
 
-    read_driving_mode(state, player)
+    sync.driving_mode(state, player)
 
-    local vehicle = event.entity or player.vehicle
-    if vehicle then
-        local related_players = set_default(storage.entity_related_players, vehicle.unit_number, {})
-        if state.driving_mode ~= driving_mode.not_driving then
-            related_players[event.player_index] = true
-            script.register_on_object_destroyed(vehicle)
-        else
+    -- Just an optimization for memory use and amount of looping, doesn't affect logic.
+    if state.driving_mode == driving_mode.not_driving and event.entity then
+        local old_vehicle = event.entity
+        local related_players = storage.entity_related_players[old_vehicle.unit_number]
+        if related_players then
             related_players[event.player_index] = nil
+            if next(related_players) == nil then
+                storage.entity_related_players[old_vehicle.unit_number] = nil
+            end
         end
-    else
-        log("on_player_driving_changed_state: error: driving state changed without a vehicle")
     end
 
     update_hud(event.player_index)
@@ -384,7 +431,7 @@ subscriptions:on_event(defines.events.on_object_destroyed, function(event)
     if not related_players then return end
 
     for player_index in pairs(related_players) do
-        read_driving_mode(storage.per_player[player_index], game.get_player(player_index))
+        sync.driving_mode(storage.per_player[player_index], game.get_player(player_index))
         update_hud(player_index)
     end
     storage.entity_related_players[event.useful_id] = nil
@@ -395,7 +442,7 @@ subscriptions:on_event(defines.events.on_player_controller_changed, function(eve
     state.time_of.controller_changed = event.tick
     -- It is possible to sit into a vehicle and then remotely "enter" another vehicle.
     -- `on_player_driving_changed_state` won't fire when going back.
-    read_driving_mode(state, game.get_player(event.player_index))
+    sync.driving_mode(state, game.get_player(event.player_index))
     update_hud(event.player_index)
 end)
 
