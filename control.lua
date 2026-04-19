@@ -48,7 +48,7 @@ local function update_hud(player_index)
 
     local show_all = not state.dynamic_hud_enabled
         or state.opened_gui == defines.gui_type.controller
-        or state.time_of.inventory_closed ~= nil
+        or state.time_of.requested_full_ui ~= nil
 
     local show_research = show_all
         or state.time_of.research_updated ~= nil
@@ -293,10 +293,22 @@ subscriptions:on_event(defines.events.on_gui_closed, function(event)
     sync.opened_gui(state, player)
 
     if event.gui_type == defines.gui_type.controller then
-        state.time_of.inventory_closed = event.tick
+        state.time_of.requested_full_ui = event.tick
     end
 
     update_hud(event.player_index)
+end)
+
+subscriptions:on_event(own"increase-ui-scale", function(event)
+    update_hud_bacause("requested_full_ui", event.player_index, event.tick)
+end)
+
+subscriptions:on_event(own"decrease-ui-scale", function(event)
+    update_hud_bacause("requested_full_ui", event.player_index, event.tick)
+end)
+
+subscriptions:on_event(own"reset-ui-scale", function(event)
+    update_hud_bacause("requested_full_ui", event.player_index, event.tick)
 end)
 
 local function on_active_research_updated(tick, force)
