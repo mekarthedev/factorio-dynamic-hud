@@ -4,11 +4,6 @@ require("commons")
 --        - StatsGui uses gui.screen to show stats similar to ups
 --        - TaskList shows list of tasks in "keep open" mode
 -- #todo: test in multiplayer
--- #todo: literally everything hides with delay
---        -> maybe refactor to track time per ui element instead of per event
---              counter example: controller_changed
---                  -> make it an update parameter: `update_hud(pi, { controller_changed = true })`
---        ^ not everything: no need to delay when closing entities' views
 
 -- The "nth tick" counts from 0, not from the moment of subscribing to the event
 -- More frequent checks mean having measured time intervals closer to ideal time intervals
@@ -79,20 +74,28 @@ local function update_hud(player_index)
         or state.opened_gui == defines.gui_type.equipment
         or state.opened_gui == defines.gui_type.other_player
         or state.opened_gui == defines.gui_type.blueprint_library
-        -- A workaround: the vehicle toolbar cannot be hidden while driving with character
-        -- but is affected by `show_tool_bar` while remote driving.
-        -- If hidden in remote, will not show up for vehicle driven by character until forcefully toggled on
-        or state.time_of.controller_changed ~= nil
+
     local in_combat = 
         state.time_of.involved_in_combat ~= nil
         or state.in_cursor == "combat"  -- #todo: use int enum
         or state.time_of.combat_cursor_dropped ~= nil
+
     local show_toolbar = show_controller_bars
-        or (in_combat and state.driving_mode ~= driving_mode.by_character)
+        or state.time_of.toolbar_updated ~= nil
+        or in_combat
+        -- Workaround (Factorio v2.0.76):
+        -- The vehicle toolbar is not affected by `show_tool_bar` while driving with a character
+        -- but is affected while driving remotely. If hidden in remote, it will not show back up
+        -- for vehicle driven by character until next `show_tool_bar = true` write.
+        -- For that reason and to avoid flickering due to `shoot-enemy` action,
+        -- lets just show character's toolbar along with vehicle's one.
+        or state.driving_mode == driving_mode.by_character
+
     local show_quickbar = show_controller_bars
         or state.time_of.quickbar_updated ~= nil
         or not state.settings.hide_quickbar
         or (in_combat and state.settings.show_quickbar_in_combat)
+
     local show_shortcuts = show_controller_bars
         or state.in_cursor == "wire"
         or state.time_of.wire_cursor_dropped ~= nil
@@ -143,6 +146,13 @@ local function update_hud(player_index)
             end
         end)
     end
+end
+
+-- a convenience function for a common usecase
+local function update_hud_bacause(event_name, player_index, tick)
+    local state = storage.per_player[player_index]
+    state.time_of[event_name] = tick
+    update_hud(player_index)
 end
 
 local function setup(player_index)
@@ -291,9 +301,7 @@ end)
 
 local function on_active_research_updated(tick, force)
     for _, player in pairs(force.players) do
-        local state = storage.per_player[player.index]
-        state.time_of.research_updated = tick
-        update_hud(player.index)
+        update_hud_bacause("research_updated", player.index, tick)
     end
 end
 
@@ -355,11 +363,32 @@ subscriptions:on_event(defines.events.on_player_cursor_stack_changed, function(e
     end
 end)
 
-local function on_involved_in_combat(player_index, tick)
-    local state = storage.per_player[player_index]
-    state.time_of.involved_in_combat = tick
-    update_hud(player_index)
-end
+subscriptions:on_event(own"next-weapon", function(event)
+    update_hud_bacause("toolbar_updated", event.player_index, event.tick)
+end)
+
+subscriptions:on_event(defines.events.on_player_armor_inventory_changed, function(event)
+    update_hud_bacause("toolbar_updated", event.player_index, event.tick)
+end)
+
+subscriptions:on_event(defines.events.on_player_gun_inventory_changed, function(event)
+    update_hud_bacause("toolbar_updated", event.player_index, event.tick)
+end)
+
+subscriptions:on_event(defines.events.on_player_ammo_inventory_changed, function(event)
+    update_hud_bacause("toolbar_updated", event.player_index, event.tick)
+end)
+
+subscriptions:on_event(own"shoot-enemy", function(event)
+    local state = storage.per_player[event.player_index]
+    state.time_of.involved_in_combat = event.tick
+    state.time_of.toolbar_updated = event.tick
+    update_hud(event.player_index)
+end)
+
+subscriptions:on_event(own"shoot-selected", function(event)
+    update_hud_bacause("toolbar_updated", event.player_index, event.tick)
+end)
 
 subscriptions:on_event(defines.events.on_entity_damaged, function(event)
     local attacker = event.cause or event.source  -- it is unclear if both can be nil at the same time
@@ -376,12 +405,12 @@ subscriptions:on_event(defines.events.on_entity_damaged, function(event)
     then
         local attacker_player_index = attacker and player_index_of(attacker)
         if attacker_player_index then
-            on_involved_in_combat(attacker_player_index, event.tick)
+            update_hud_bacause("involved_in_combat", attacker_player_index, event.tick)
         end
 
         local victim_player_index = player_index_of(victim)
         if victim_player_index then
-            on_involved_in_combat(victim_player_index, event.tick)
+            update_hud_bacause("involved_in_combat", victim_player_index, event.tick)
         end
     end
 end)
@@ -447,13 +476,9 @@ subscriptions:on_event(defines.events.on_player_controller_changed, function(eve
 end)
 
 subscriptions:on_event(defines.events.on_player_changed_surface, function(event)
-    local state = storage.per_player[event.player_index]
-    state.time_of.surface_changed = event.tick
-    update_hud(event.player_index)
+    update_hud_bacause("surface_changed", event.player_index, event.tick)
 end)
 
 subscriptions:on_event(defines.events.on_player_set_quick_bar_slot, function(event)
-    local state = storage.per_player[event.player_index]
-    state.time_of.quickbar_updated = event.tick
-    update_hud(event.player_index)
+    update_hud_bacause("quickbar_updated", event.player_index, event.tick)
 end)
