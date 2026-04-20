@@ -37,6 +37,33 @@ subscriptions = {
     end,
 }
 
+ticks_dispatch = {
+    _oneshot_handlers = {},
+
+    _continue = function(self, n)
+        script.on_nth_tick(n, function(event)
+            local current_batch = self._oneshot_handlers[n]
+            self._oneshot_handlers[n] = nil
+            for _, handle in pairs(current_batch) do
+                handle(event)
+            end
+            if self._oneshot_handlers[n] == nil then
+                script.on_nth_tick(n, nil)
+            end
+        end)
+    end,
+
+    on_nth_tick_once = function(self, n, handler)
+        local handlers = set_default(self._oneshot_handlers, n, {})
+        table.insert(handlers, handler)
+        self:_continue(n)
+    end,
+}
+
+function on_next_tick(oneshot_action)
+    ticks_dispatch:on_nth_tick_once(1, oneshot_action)
+end
+
 -- Note: There are many functions/properties in Factorio API
 -- that can be accessed "only if entity is a Vehicle".
 -- This is the only known way to check if an entity is a "vehicle".

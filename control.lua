@@ -92,7 +92,7 @@ local function update_hud(player_index)
         or state.driving_mode == driving_mode.by_character
 
     local show_quickbar = show_controller_bars
-        or state.time_of.quickbar_updated ~= nil
+        or state.time_of.quickbar_interaction ~= nil
         or not state.settings.hide_quickbar
         or (in_combat and state.settings.show_quickbar_in_combat)
 
@@ -123,6 +123,7 @@ local function update_hud(player_index)
     player.game_view_settings.show_shortcut_bar = show_shortcuts
 
     if next(state.time_of) ~= nil then
+        -- #todo: use `ticks_dispatch`
         script.on_nth_tick(hud_check_period, function(e)
             local wait_more = false
 
@@ -491,6 +492,82 @@ subscriptions:on_event(defines.events.on_player_changed_surface, function(event)
     update_hud_bacause("surface_changed", event.player_index, event.tick)
 end)
 
+--------
+
+local function update_hud_with_quickbar_workaround(player_index, tick)
+    if game.get_player(player_index).game_view_settings.show_quickbar then
+        update_hud_bacause("quickbar_interaction", player_index, tick)
+        return
+    end
+
+    -- When un-hiding the quickbar immediately during handling of a quickbar switch hotkey,
+    -- it shows up with outdated state (the state before switching).
+    -- See https://forums.factorio.com/viewtopic.php?t=133378
+
+    on_next_tick(function()
+        update_hud_bacause("quickbar_interaction", player_index, tick)
+    end)
+end
+
+subscriptions:on_event(own"rotate-active-quick-bars", function(event)
+    update_hud_with_quickbar_workaround(event.player_index, event.tick)
+end)
+
+local function shift_selected_quickbar_workaround(direction, player_index, tick)
+    if game.get_player(player_index).game_view_settings.show_quickbar then
+        update_hud_bacause("quickbar_interaction", player_index, tick)
+        return
+    end
+
+    -- Some quickbar selection hotkeys aren't working while quickbar is hidden.
+    -- Workaround: do selection yourself.
+    -- See https://forums.factorio.com/viewtopic.php?t=133377
+
+    local player = game.get_player(player_index)
+    local selected_before = player.get_active_quick_bar_page(1)
+
+    on_next_tick(function()
+        local selected_after = player.get_active_quick_bar_page(1)
+        -- Detect if the bug is still there.
+        if selected_after == selected_before then
+            player.set_active_quick_bar_page(1, (10 + selected_after - 1 + direction) % 10 + 1)
+        end
+        update_hud_bacause("quickbar_interaction", player_index, tick)
+    end)
+end
+
+subscriptions:on_event(own"next-active-quick-bar"	, function(event)
+    shift_selected_quickbar_workaround(1, event.player_index, event.tick)
+end)
+
+subscriptions:on_event(own"previous-active-quick-bar", function(event)
+    shift_selected_quickbar_workaround(-1, event.player_index, event.tick)
+end)
+
+for i = 1, 10 do
+    subscriptions:on_event(own("action-bar-select-page-"..i), function(event)
+        update_hud_with_quickbar_workaround(event.player_index, event.tick)
+    end)
+end
+
+for i = 1, 10 do
+    subscriptions:on_event(own("quick-bar-button-"..i), function(event)
+        -- #todo: Reimplement hotkeys from scratch
+        -- local player = game.get_player(event.player_index)
+        -- local selected_page = player.get_active_quick_bar_page(1)
+        -- local item_filter = player.get_quick_bar_slot(10*(selected_page-1)+i)
+
+        -- log("quick-bar-button-"..i..":"
+        --     .." page = "..selected_page
+        --     .." filter = "..serpent.block(item_filter)
+        -- )
+    end)
+
+    subscriptions:on_event(own("quick-bar-button-"..i.."-secondary"), function(event)
+        -- #todo Reimplement hotkeys from scratch
+    end)
+end
+
 subscriptions:on_event(defines.events.on_player_set_quick_bar_slot, function(event)
-    update_hud_bacause("quickbar_updated", event.player_index, event.tick)
+    update_hud_bacause("quickbar_interaction", event.player_index, event.tick)
 end)
