@@ -4,6 +4,7 @@ require("commons")
 --        - StatsGui uses gui.screen to show stats similar to ups
 --        - TaskList shows list of tasks in "keep open" mode
 -- #todo: test in multiplayer
+-- #todo: second quickbar workaround: just show quickbar on quickslot hotkey, allow choosing workaround in settings
 
 -- The "nth tick" counts from 0, not from the moment of subscribing to the event
 -- More frequent checks mean having measured time intervals closer to ideal time intervals
@@ -338,10 +339,7 @@ function sync.in_cursor(state, player)
     local cursor_stack = player.cursor_stack
     local in_cursor = nil
     if cursor_stack and cursor_stack.valid_for_read then
-        if cursor_stack.name == "red-wire"
-            or cursor_stack.name == "green-wire"
-            or cursor_stack.name == "copper-wire"
-        then
+        if is_wire[cursor_stack.name] then
             in_cursor = "wire"
 
         elseif cursor_stack.prototype.group.name == "combat"
@@ -550,21 +548,148 @@ for i = 1, 10 do
     end)
 end
 
+local function pick_quickslot_workaround(player_index, tick, quickbar_screen_page, quickbar_slot)
+    local player = game.get_player(player_index)
+    if player.game_view_settings.show_quickbar then return end
+
+    -- As of Factorio v2.0.76, Quickbar slot hotkeys aren't working while quickbar is hidden.
+    -- Workaround: reimplement quickbar hotkeys from scratch.
+    -- See https://forums.factorio.com/viewtopic.php?t=133377
+
+    -- The re-implementation is not perfect.
+    --   - Uniq items (blueprints, remotes) cannot be distinquished from each other.
+    --   - Slots with blueprints from bp library are reported by API as empty slots.
+    --   - The "hand" icon in inventory doesn't appear.
+    --   - Selected slot is not highlighted.
+
+    local cursor_stack = player.cursor_stack
+    if not cursor_stack then return end
+
+    local cursor_item_before = cursor_stack.valid_for_read and (cursor_stack.item or cursor_stack) or nil
+    local cursor_record_before = player.cursor_record
+    local cursor_ghost_before = player.cursor_ghost
+
+    -- Give game a chance to properly handle hotkey before applying workaround.
+    on_next_tick(function()
+
+        local cursor_item_after = cursor_stack.valid_for_read and (cursor_stack.item or cursor_stack) or nil
+        local cursor_record_after = player.cursor_record
+        local cursor_ghost_after = player.cursor_ghost
+
+        local function match(before, after)
+            return before == after or before and after and item_match(before, after)
+        end
+        local same_cursor_as_before =
+            match(cursor_item_before, cursor_item_after)
+            and match(cursor_record_before, cursor_record_after)
+            and match(cursor_ghost_before, cursor_ghost_after)
+
+        -- Detect if bug is not fixed.
+        -- If there are changes to the cursor then the bug is probably fixed.
+        -- Otherwise, cases that will give false positive:
+        --   - having picked non-uniq item, selected quickslot with same entity type
+        --   - having selected a quickslot, selected different quickslot with same setup
+        --   - having empty cursor, selected empty quickslot
+        if not same_cursor_as_before then return end
+
+        local selected_page = player.get_active_quick_bar_page(quickbar_screen_page)
+        local quickslot_filter = player.get_quick_bar_slot(10*(selected_page-1)+quickbar_slot)
+
+        -- As there is no way of distinguishing which blueprint or planner is set for the quickslot,
+        -- consider all blueprints and planners as empty slots.
+        --
+        -- Aside from the above and really empty slots, a slot with a remote
+        -- or a blueprint from bp library is also reported by the game as "empty".
+        -- The only thing left is tell the user the hotkey doesn't work
+        -- by clearing the cursor and bringing up the Quickbar.
+        if quickslot_filter and (
+            quickslot_filter.name == "blueprint"
+            or quickslot_filter.name == "blueprint-book"
+            or quickslot_filter.name == "deconstruction-planner"
+            or quickslot_filter.name == "upgrade-planner")
+        then
+            quickslot_filter = nil
+        end
+
+        if not quickslot_filter then
+            update_hud_bacause("quickbar_interaction", player_index, tick)
+        end
+
+        -- Cases:
+        --   empty cursor, found in inventory -> transfer to cursor
+        --   cursor with item, found in inventory -> swap
+        --   cursor with item, missing in inventory -> ghost
+        --      ^ same but required item is already in cursor -> do nothing
+        --   selected quickslot is empty -> clear cursor
+
+        -- Check if cursor needs to be updated.
+        -- Ideally repeated press of the same quickslot should clear cursor,
+        -- But if there are multiple quickslots with same filter,
+        -- there is no way of knowing which one was selected before.
+        if
+            not quickslot_filter and (
+                not cursor_stack.valid_for_read
+                and player.cursor_record == nil
+                and player.cursor_ghost == nil
+            )
+            or quickslot_filter and (
+                cursor_stack.valid_for_read and item_match(cursor_stack, quickslot_filter)
+                or (not cursor_stack.valid_for_read and player.cursor_ghost
+                    and item_match(player.cursor_ghost, quickslot_filter))
+            )
+        then return end
+
+        local inventory = player.get_main_inventory()
+        if not inventory then return end
+
+        function play_cursor_stack_sound(action)
+            local sound_path, volume
+            if cursor_stack.valid_for_read then
+                sound_path, volume = action.."/"..cursor_stack.name, 0.75
+            elseif action == "item-pick" and not player.cursor_ghost
+                or action == "item-drop" and player.cursor_ghost then
+                sound_path, volume = "utility/clear_cursor", 1.0
+            end
+            if sound_path and helpers.is_valid_sound_path(sound_path) then
+                -- in the real implementation different sounds are played with different volume
+                player.play_sound{path = sound_path, volume_modifier = volume}
+            end
+        end
+
+        play_cursor_stack_sound("item-drop")
+
+        local inventory_stack = quickslot_filter and inventory.find_item_stack(quickslot_filter)
+        if inventory_stack then
+            cursor_stack.swap_stack(inventory_stack)  -- works for empty cursor too
+            player.cursor_ghost = nil
+
+            play_cursor_stack_sound("item-pick")
+
+        else
+            -- Note: `cursor_record` is readonly
+            if player.clear_cursor() then
+                if quickslot_filter and is_wire[quickslot_filter.name] then
+                    cursor_stack.set_stack(quickslot_filter)
+                    player.cursor_stack_temporary = true
+                else
+                    player.cursor_ghost = quickslot_filter
+                end
+
+                play_cursor_stack_sound("item-pick")
+                -- Note: if inventory is full `clear_cursor()` will play the error sound
+                --   and show appropriate hint. No need to do it ourselves.
+            end
+        end
+    end)
+end
+
 for i = 1, 10 do
     subscriptions:on_event(own("quick-bar-button-"..i), function(event)
-        -- #todo: Reimplement hotkeys from scratch
-        -- local player = game.get_player(event.player_index)
-        -- local selected_page = player.get_active_quick_bar_page(1)
-        -- local item_filter = player.get_quick_bar_slot(10*(selected_page-1)+i)
-
-        -- log("quick-bar-button-"..i..":"
-        --     .." page = "..selected_page
-        --     .." filter = "..serpent.block(item_filter)
-        -- )
+        pick_quickslot_workaround(event.player_index, event.tick, 1, i)
     end)
 
     subscriptions:on_event(own("quick-bar-button-"..i.."-secondary"), function(event)
-        -- #todo Reimplement hotkeys from scratch
+        pick_quickslot_workaround(event.player_index, event.tick, 2, i)
     end)
 end
 

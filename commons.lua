@@ -77,6 +77,12 @@ is_vehicle_type = {
     ["artillery-wagon"] = true
 }
 
+is_wire = {
+    ["red-wire"] = true,
+    ["green-wire"] = true,
+    ["copper-wire"] = true,
+}
+
 -- get the player controlling this entity (character, car, etc.)
 function player_index_of(entity)
     local player = nil
@@ -93,6 +99,14 @@ function player_index_of(entity)
         end
     end
     return player and player.index
+end
+
+function item_match(item_like, filter_like)
+    local item_name = type(item_like.name) == "string" and item_like.name or item_like.name.name
+    local item_quality = type(item_like.quality) == "string" and item_like.quality or item_like.quality.name
+    local filter_name = type(filter_like.name) == "string" and filter_like.name or filter_like.name.name
+    local filter_quality = type(filter_like.quality) == "string" and filter_like.quality or filter_like.quality.name
+    return item_name == filter_name and item_quality == filter_quality
 end
 
 -- Common lua utilities
