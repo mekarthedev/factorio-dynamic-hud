@@ -137,3 +137,49 @@ function some(tbl, predicate)
     end
     return false
 end
+
+-- Types
+
+if false then
+    ---@class (exact) Data
+    ---@field extend fun(self, other: table[])
+    data = data
+
+    ---@class (exact) Defines
+    ---@field events table<string, integer>
+    ---@field gui_type table<string, integer>
+    ---@field target_type table<string, integer>
+    defines = defines
+
+    ---@class (exact) LuaBootstrap
+    ---@field on_init fun(handler: nil|fun())
+    ---@field on_load fun(handler: nil|fun())
+    ---@field on_configuration_changed fun(handler: nil|fun(data))
+    ---@field on_nth_tick fun(tick: integer, handler: nil|fun(e: { tick: integer }))
+    ---@field on_event fun(event_type: string|integer, handler: nil|fun(e))
+    ---@field register_on_object_destroyed fun(object: table)
+    script = script
+
+    ---@class (exact) LuaGameScript
+    ---@field get_player fun(player_index: integer): any
+    ---@field players table<integer, any>
+    game = game
+
+    ---@class (exact) LuaSettings
+    ---@field get_player_settings fun(player_index: integer): table<string, { value: number|boolean|string }>
+    settings = settings
+
+    ---@type table<string, any>
+    storage = storage
+
+    ---@class (exact) LuaHelpers
+    ---@field is_valid_sound_path fun(path: string): boolean
+    helpers = helpers
+
+    ---@class (exact) Serpent
+    ---@field block fun(value): string
+    serpent = serpent
+
+    ---@type fun(msg: string)
+    log = log
+end
