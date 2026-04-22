@@ -4,7 +4,6 @@ require("commons")
 --        - StatsGui uses gui.screen to show stats similar to ups
 --        - TaskList shows list of tasks in "keep open" mode
 -- #todo: test in multiplayer
--- #todo: second quickbar workaround: just show quickbar on quickslot hotkey, allow choosing workaround in settings
 
 -- The "nth tick" counts from 0, not from the moment of subscribing to the event
 -- More frequent checks mean having measured time intervals closer to ideal time intervals
@@ -190,6 +189,8 @@ local function setup(player_index)
     state.settings.hide_minimap = ps[own"hide-minimap"].value
     state.settings.show_minimap_while_driving = ps[own"show-minimap-while-driving"].value
     state.settings.hide_quickbar = ps[own"hide-quickbar"].value
+    state.settings.quickbar_workaround_enabled = ps[own"quickbar-workaround-enabled"].value
+    state.settings.show_quickbar_on_use = ps[own"show-quickbar-on-use"].value
     state.settings.show_quickbar_in_combat = ps[own"show-quickbar-in-combat"].value
     state.settings.hide_top = ps[own"hide-top"].value
     state.settings.hide_left = ps[own"hide-left"].value
@@ -548,11 +549,9 @@ for i = 1, 10 do
     end)
 end
 
-local function pick_quickslot_workaround(player_index, tick, quickbar_screen_page, quickbar_slot)
-    local player = game.get_player(player_index)
-    if player.game_view_settings.show_quickbar then return end
-
+local function pick_quickslot_workaround(player, tick, quickbar_screen_page, quickbar_slot)
     -- As of Factorio v2.0.76, Quickbar slot hotkeys aren't working while quickbar is hidden.
+    -- Expected to be fixed in v2.1.
     -- Workaround: reimplement quickbar hotkeys from scratch.
     -- See https://forums.factorio.com/viewtopic.php?t=133377
 
@@ -594,6 +593,9 @@ local function pick_quickslot_workaround(player_index, tick, quickbar_screen_pag
 
         local selected_page = player.get_active_quick_bar_page(quickbar_screen_page)
         local quickslot_filter = player.get_quick_bar_slot(10*(selected_page-1)+quickbar_slot)
+        if type(quickslot_filter) == "string" then
+            quickslot_filter = { name = quickslot_filter, quality = "normal" }
+        end
 
         -- As there is no way of distinguishing which blueprint or planner is set for the quickslot,
         -- consider all blueprints and planners as empty slots.
@@ -612,7 +614,7 @@ local function pick_quickslot_workaround(player_index, tick, quickbar_screen_pag
         end
 
         if not quickslot_filter then
-            update_hud_bacause("quickbar_interaction", player_index, tick)
+            update_hud_bacause("quickbar_interaction", player.index, tick)
         end
 
         -- Cases:
@@ -683,13 +685,24 @@ local function pick_quickslot_workaround(player_index, tick, quickbar_screen_pag
     end)
 end
 
+local function on_quickslot_button(screen_page, slot_index, event)
+    local state = storage.per_player[event.player_index]
+    local player = game.get_player(event.player_index)
+    if not player.game_view_settings.show_quickbar and state.settings.quickbar_workaround_enabled then
+        pick_quickslot_workaround(player, event.tick, screen_page, slot_index)
+    end
+
+    if state.settings.show_quickbar_on_use then
+        update_hud_bacause("quickbar_interaction", event.player_index, event.tick)
+    end
+end
+
 for i = 1, 10 do
     subscriptions:on_event(own("quick-bar-button-"..i), function(event)
-        pick_quickslot_workaround(event.player_index, event.tick, 1, i)
+        on_quickslot_button(1, i, event)
     end)
-
     subscriptions:on_event(own("quick-bar-button-"..i.."-secondary"), function(event)
-        pick_quickslot_workaround(event.player_index, event.tick, 2, i)
+        on_quickslot_button(2, i, event)
     end)
 end
 

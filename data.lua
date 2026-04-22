@@ -76,7 +76,6 @@ for i = 1, 10 do
     })
 end
 
--- Workaround (Factorio v2.0.76) for non-functioning quickbar hotkeys
 for i = 1, 10 do
     data:extend({
         {

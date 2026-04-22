@@ -32,11 +32,25 @@ data:extend({
         order = "2",
     },
     {
-        name = own"show-quickbar-in-combat",
+        name = own"quickbar-workaround-enabled",
         type = "bool-setting",
         setting_type = "runtime-per-user",
         default_value = true,
         order = "2.1",
+    },
+    {
+        name = own"show-quickbar-on-use",
+        type = "bool-setting",
+        setting_type = "runtime-per-user",
+        default_value = true,
+        order = "2.2",
+    },
+    {
+        name = own"show-quickbar-in-combat",
+        type = "bool-setting",
+        setting_type = "runtime-per-user",
+        default_value = false,
+        order = "2.3",
     },
     {
         name = own"hide-top",
