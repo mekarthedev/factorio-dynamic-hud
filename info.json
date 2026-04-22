@@ -10,5 +10,5 @@
         "! hud-auto-hide",
         "! hide-uis"
     ],
-    "description": "Automatically hide and show parts of HUD/UI as needed"
+    "description": "Hides all HUD/UI by default and then dynamically shows only its relevant parts based on your current in-game actions"
 }
