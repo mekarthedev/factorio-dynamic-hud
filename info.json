@@ -1,6 +1,6 @@
 {
     "name": "dynamic-hud",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "title": "Dynamic HUD",
     "author": "aglaron",
     "factorio_version": "2.0",
@@ -10,5 +10,5 @@
         "! hud-auto-hide",
         "! hide-uis"
     ],
-    "description": "Hides all HUD/UI by default and then dynamically shows only its relevant parts based on your current in-game actions"
+    "description": "Hides all HUD/UI by default and then dynamically shows only relevant parts of UI based on your current in-game actions.\n\nShows minimap when you are driving, shows weapons when you are fighting, shows shortcuts when you are rewiring your combinators, and some more.\n\nHelps keeping your OLED safe from burn-ins as a bonus."
 }
