@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.0.1
+Date: 2026-04-23
+  Changes:
+    - UI shown due to changes on UI itself will now be kept visible for some minimum amount of time
+      even if the hiding delay setting is set to 0 seconds.
+---------------------------------------------------------------------------------------------------
 Version: 1.0.0
 Date: 2026-04-22
   Features:
