@@ -45,7 +45,9 @@ local function sync_state(player_index)
     state.time_of = {}
 end
 
-local function update_hud(player_index)
+local update_hud, schedule_hud_update
+
+function update_hud(player_index)
     local state = storage.per_player[player_index]
     local player = game.get_player(player_index)
 
@@ -139,31 +141,35 @@ local function update_hud(player_index)
     player.game_view_settings.show_shortcut_bar = show_shortcuts
 
     if next(state.time_of) ~= nil then
-        -- #todo: use `ticks_dispatch`
-        script.on_nth_tick(hud_check_period, function(e)
-            local wait_more = false
-
-            for player_index, state in pairs(storage.per_player) do
-                local update = false
-                for event, tick in pairs(state.time_of) do
-                    local update_delay = math.max(state.settings.hud_update_delay, minimum_update_delay[event] or 0)
-                    if e.tick - tick >= update_delay then
-                        state.time_of[event] = nil
-                        update = true
-                    else
-                        wait_more = true
-                    end
-                end
-                if update then
-                    update_hud(player_index)
-                end
-            end
-
-            if not wait_more then
-                script.on_nth_tick(hud_check_period, nil)
-            end
-        end)
+        schedule_hud_update()
     end
+end
+
+function schedule_hud_update()
+    -- #todo: use `ticks_dispatch`
+    script.on_nth_tick(hud_check_period, function(e)
+        local wait_more = false
+
+        for player_index, state in pairs(storage.per_player) do
+            local update = false
+            for event, tick in pairs(state.time_of) do
+                local update_delay = math.max(state.settings.hud_update_delay, minimum_update_delay[event] or 0)
+                if e.tick - tick >= update_delay then
+                    state.time_of[event] = nil
+                    update = true
+                else
+                    wait_more = true
+                end
+            end
+            if update then
+                update_hud(player_index)
+            end
+        end
+
+        if not wait_more then
+            script.on_nth_tick(hud_check_period, nil)
+        end
+    end)
 end
 
 -- a convenience function for a common usecase
