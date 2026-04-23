@@ -9,6 +9,19 @@ require("commons")
 -- More frequent checks mean having measured time intervals closer to ideal time intervals
 local hud_check_period = ticks_per_second / 2
 
+-- In case hud update delay is set to 0, notification-type updates to UI still need to be indicated.
+-- Configure meaningful minimum time to wait before dismissing notification-type updates to UI.
+-- A "notification-type update to UI" is an event that directly imply some changes in related UI.
+-- E.g. involved_in_combat doesn't imply that any hidden UI has changed.
+-- Shooting on the other hand implies changes to the indicator of amount of ammo left.
+local minimum_update_delay = {
+    -- [keyof(state.time_of)] = integer ticks
+    research_updated = 2 * ticks_per_second,  -- finished research notification
+    quickbar_interaction = 1 * ticks_per_second,  -- quickbars rotation notification
+    toolbar_updated = 1 * ticks_per_second,  -- changes in toolbar (including ammo reduction when shooting)
+    ui_updated = 1 * ticks_per_second,  -- ui scale changed
+}
+
 local driving_mode = {
     not_driving = 0,
     by_character = 1,
@@ -38,7 +51,9 @@ local function update_hud(player_index)
 
     if state.settings.hud_update_delay == 0 then
         for event in pairs(state.time_of) do
-            state.time_of[event] = nil
+            if not minimum_update_delay[event] then
+                state.time_of[event] = nil
+            end
         end
     end
 
@@ -48,7 +63,8 @@ local function update_hud(player_index)
 
     local show_all = not state.dynamic_hud_enabled
         or state.opened_gui == defines.gui_type.controller
-        or state.time_of.requested_full_ui ~= nil
+        or state.time_of.inventory_closed ~= nil
+        or state.time_of.ui_updated ~= nil
 
     local show_research = show_all
         or state.time_of.research_updated ~= nil
@@ -130,7 +146,8 @@ local function update_hud(player_index)
             for player_index, state in pairs(storage.per_player) do
                 local update = false
                 for event, tick in pairs(state.time_of) do
-                    if e.tick - tick >= state.settings.hud_update_delay then
+                    local update_delay = math.max(state.settings.hud_update_delay, minimum_update_delay[event] or 0)
+                    if e.tick - tick >= update_delay then
                         state.time_of[event] = nil
                         update = true
                     else
@@ -296,22 +313,22 @@ subscriptions:on_event(defines.events.on_gui_closed, function(event)
     sync.opened_gui(state, player)
 
     if event.gui_type == defines.gui_type.controller then
-        state.time_of.requested_full_ui = event.tick
+        state.time_of.inventory_closed = event.tick
     end
 
     update_hud(event.player_index)
 end)
 
 subscriptions:on_event(own"increase-ui-scale", function(event)
-    update_hud_bacause("requested_full_ui", event.player_index, event.tick)
+    update_hud_bacause("ui_updated", event.player_index, event.tick)
 end)
 
 subscriptions:on_event(own"decrease-ui-scale", function(event)
-    update_hud_bacause("requested_full_ui", event.player_index, event.tick)
+    update_hud_bacause("ui_updated", event.player_index, event.tick)
 end)
 
 subscriptions:on_event(own"reset-ui-scale", function(event)
-    update_hud_bacause("requested_full_ui", event.player_index, event.tick)
+    update_hud_bacause("ui_updated", event.player_index, event.tick)
 end)
 
 local function on_active_research_updated(tick, force)
