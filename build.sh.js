@@ -3,5 +3,7 @@
 import { $ } from "bun"
 import info from "./info.json"
 
+const commitShort = (await $`git rev-parse --short HEAD`.text()).trim()
 const zipName = `${info.name}_${info.version}`
-await $`git archive -o ${zipName}.zip --prefix=${zipName}/ HEAD ":(exclude)${import.meta.path}"`
+const folderName = `${zipName}+${commitShort}`
+await $`git archive -o ${zipName}.zip --prefix=${folderName}/ HEAD ":(exclude)${import.meta.path}"`
