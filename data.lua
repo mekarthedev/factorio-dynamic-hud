@@ -47,6 +47,13 @@ data:extend({
 
     {
         type = "custom-input",
+        name = own"pin",
+        linked_game_control = "pin",
+        key_sequence = "",
+    },
+
+    {
+        type = "custom-input",
         name = own"rotate-active-quick-bars",
         linked_game_control = "rotate-active-quick-bars",
         key_sequence = "",

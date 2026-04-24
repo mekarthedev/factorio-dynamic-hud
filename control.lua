@@ -78,6 +78,7 @@ function update_hud(player_index)
         or state.opened_gui == defines.gui_type.bonus
     local show_minimap = show_all
         or (state.driving_mode ~= driving_mode.not_driving and state.settings.show_minimap_while_driving)
+        or state.time_of.minimap_updated ~= nil
         or not state.settings.hide_minimap
 
     local show_map_options = show_all
@@ -357,6 +358,15 @@ subscriptions:on_event(defines.events.on_research_cancelled, function(event)
     if #event.force.research_queue == 0 then
         on_active_research_updated(event.tick, event.force)
     end
+end)
+
+subscriptions:on_event(own"pin", function(event)
+    -- There is no API to hide list of pins.
+    -- Also it doesn't appear if right side views are currently hidden,
+    -- but it doesn't hide when right side views are told to hide.
+    -- See https://forums.factorio.com/viewtopic.php?t=133423
+    -- Show minimap to force list of pins out of hiding.
+    update_hud_bacause("minimap_updated", event.player_index, event.tick)
 end)
 
 function sync.in_cursor(state, player)
