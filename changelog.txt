@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.0.2
+Date: 2026-04-24
+  Bugfixes:
+    - Partialy fix inconsistent behavior of list of pins by forcing it to show up along minimap
+      when "pin" game control is used (won't work for adding pins by scripts).
+---------------------------------------------------------------------------------------------------
 Version: 1.0.1
 Date: 2026-04-23
   Changes:
