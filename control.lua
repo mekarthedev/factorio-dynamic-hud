@@ -296,11 +296,11 @@ end)
 -- The system UI elements somehow aren't affected
 -- while the new game cutscene is playing
 events_dispatch:on_event(defines.events.on_cutscene_cancelled, function(event)
-    update_hud(event.player_index)
+    update_hud_bacause("ui_updated", event.player_index, event.tick)
 end)
 
 events_dispatch:on_event(defines.events.on_cutscene_finished, function(event)
-    update_hud(event.player_index)
+    update_hud_bacause("ui_updated", event.player_index, event.tick)
 end)
 
 function sync.opened_gui(state, player)
