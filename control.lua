@@ -4,10 +4,15 @@ require("commons")
 --        - StatsGui uses gui.screen to show stats similar to ups
 --        - TaskList shows list of tasks in "keep open" mode
 -- #todo: test in multiplayer
+-- #todo: upcoming in 2.1
+--        - support show_pins_gui: https://forums.factorio.com/viewtopic.php?t=133423
+--        - remove quckbar workaround: https://forums.factorio.com/viewtopic.php?t=133377
 
 -- The "nth tick" counts from 0, not from the moment of subscribing to the event.
 -- More frequent checks mean having measured time intervals closer to ideal time intervals.
 local hud_check_period = ticks_per_second / 2
+
+local alerts_check_period = 5 * ticks_per_second
 
 -- In case hud update delay is set to 0, notification-type updates to UI still need to be indicated.
 -- Configure meaningful minimum time to wait before dismissing notification-type updates to UI.
@@ -20,6 +25,7 @@ local minimum_update_delay = {
     quickbar_interaction = 1 * ticks_per_second,  -- quickbars rotation notification
     toolbar_updated = 1 * ticks_per_second,  -- changes in toolbar (including ammo reduction when shooting)
     ui_updated = 1 * ticks_per_second,  -- ui scale changed
+    alerts_updated = math.max(10 * ticks_per_second, alerts_check_period + 1),
 }
 
 local driving_mode = {
@@ -47,6 +53,7 @@ end
 
 local update_hud, schedule_hud_update
 
+-- MARK: update_hud()
 function update_hud(player_index)
     local state = storage.per_player[player_index]
     local player = game.get_player(player_index)
@@ -86,6 +93,9 @@ function update_hud(player_index)
     local show_surface_list = show_all
         or state.time_of.controller_changed ~= nil
         or state.time_of.surface_changed ~= nil
+
+    local show_alerts = show_all
+        or state.time_of.alerts_updated ~= nil
 
     local show_controller_bars = show_all
         or state.opened_gui == defines.gui_type.item
@@ -140,6 +150,7 @@ function update_hud(player_index)
     -- note: hiding the quickbar disables quickbar hotkeys for some reason
     player.game_view_settings.show_quickbar = show_quickbar
     player.game_view_settings.show_shortcut_bar = show_shortcuts
+    player.game_view_settings.show_alert_gui = show_alerts
 
     if next(state.time_of) ~= nil then
         schedule_hud_update()
@@ -225,6 +236,7 @@ local function setup(player_index)
 
     set_default(state, "time_of", {})
     set_default(state, "driving_mode", driving_mode.not_driving)
+    set_default(state, "alerts_summary", {})
 
     sync_state(player_index)
     update_hud(player_index)
@@ -383,6 +395,66 @@ events_dispatch:on_event(own"pin", function(event)
     -- See https://forums.factorio.com/viewtopic.php?t=133423
     -- Show minimap to force list of pins out of hiding.
     update_hud_bacause("minimap_updated", event.player_index, event.tick)
+end)
+
+-- MARK: Alerts
+
+events_dispatch:on_nth_tick(alerts_check_period, function(event)
+    for _, player in pairs(game.players) do
+        local state = storage.per_player[player.index]
+
+        -- Note: `get_alerts` cpu time depends on number of active alerts.
+        --   It becomes significant when there are thousands of alerts.
+        local current_alerts = player.get_alerts{}
+        local already_reported = false
+
+        for surface_index, per_type in pairs(current_alerts) do
+            local previous_per_type = set_default(state.alerts_summary, surface_index, {})
+            -- Note: the per-type array has 0 indexed value -> ipairs won't work.
+            for alert_type, alerts in pairs(per_type) do
+
+                -- Trying to iterate over all the alerts would result in micro-freezes
+                -- when e.g. thousands of entities are missing construction materials.
+                -- Instead only check alerts count and the specifics of the last alert.
+                -- The number of alert types is explicitly limited.
+                -- And for surfaces, assume it is also meaningfully limited.
+                local previous = set_default(previous_per_type, alert_type, { count = 0 })
+                local current_count = #alerts
+                local last_alert = current_count > 0 and alerts[current_count] or nil
+                local current_entity_id = last_alert and last_alert.target and last_alert.target.unit_number
+                local current_message = last_alert and last_alert.message
+                local current_icon = last_alert and last_alert.icon
+                local current_icon_name = current_icon and current_icon.name
+                local current_icon_quality = current_icon and current_icon.quality
+                    and (type(current_icon.quality) == "string" and current_icon.quality or current_icon.quality.name)
+
+                if previous.count ~= current_count
+                    or previous.entity_id ~= current_entity_id
+                    or previous.message ~= current_message
+                    or previous.icon_name ~= current_icon_name
+                    or previous.icon_quality ~= current_icon_quality
+                then
+                    previous.count = current_count
+                    previous.entity_id = current_entity_id
+                    previous.message = current_message
+                    previous.icon_name = current_icon_name
+                    previous.icon_quality = current_icon_quality
+
+                    if not already_reported and current_count > 0 then
+                        already_reported = true
+                        update_hud_bacause("alerts_updated", player.index, event.tick)
+                    end
+                end
+
+            end
+        end
+
+        for surface in pairs(state.alerts_summary) do
+            if not current_alerts[surface] then
+                state.alerts_summary[surface] = nil
+            end
+        end
+    end
 end)
 
 -- MARK: Cursor
