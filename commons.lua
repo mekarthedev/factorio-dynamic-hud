@@ -11,57 +11,115 @@ function is_own(name)
     return string.sub(name, 1, #own_prefix) == own_prefix
 end
 
+-- MARK: Factorio specifics
+
 ticks_per_second = 60
 
-subscriptions = {
-    handlers = {},
-    subscribed = false,
+events_dispatch = {
+    handlers = {
+        events = {},  -- { [type]: { [key]: handler } }
+        nth_tick = {},  -- { [n]: { [key]: handler } }
+    },
+    next_key = 1,
+    connected = false,
 
-    -- #todo: should `on_event` after `subscribe_all` be supported?
-    on_event = function(self, event, handler)
-        self.handlers[event] = handler
-    end,
+    notify = function (self, kind, type, event)
+        local handlers = self.handlers[kind][type]
+        if not handlers then return false end  -- shouldn't happen
 
-    subscribe_all = function(self)
-        for event, handler in pairs(self.handlers) do
-            script.on_event(event, handler)
+        local batch_last_key = 0
+        for key in pairs(handlers) do
+            batch_last_key = math.max(key, batch_last_key)
         end
-        self.subscribed = true
-    end,
-
-    unsubscribe_all = function(self)
-        for event in pairs(self.handlers) do
-            script.on_event(event, nil)
-        end
-        self.subscribed = false
-    end,
-}
-
-ticks_dispatch = {
-    _oneshot_handlers = {},
-
-    _continue = function(self, n)
-        script.on_nth_tick(n, function(event)
-            local current_batch = self._oneshot_handlers[n]
-            self._oneshot_handlers[n] = nil
-            for _, handle in pairs(current_batch) do
+        for key, handle in pairs(handlers) do
+            if key <= batch_last_key then
                 handle(event)
             end
-            if self._oneshot_handlers[n] == nil then
-                script.on_nth_tick(n, nil)
-            end
-        end)
+        end
+
+        return self.handlers[kind][type] ~= nil
     end,
 
-    on_nth_tick_once = function(self, n, handler)
-        local handlers = set_default(self._oneshot_handlers, n, {})
-        table.insert(handlers, handler)
-        self:_continue(n)
+    connection = {
+        events = {
+            continue = function(self, event_type)
+                if not self.connected then return end
+                script.on_event(event_type, function(event)
+                    self:notify("events", event_type, event)
+                end)
+            end,
+            cancel = function (self, event_type)
+                script.on_event(event_type, nil)
+            end
+        },
+
+        nth_tick = {
+            continue = function(self, n)
+                if not self.connected then return end
+                script.on_nth_tick(n, function(event)
+                    self:notify("nth_tick", n, event)
+                end)
+            end,
+            cancel = function (self, n)
+                script.on_nth_tick(n, nil)
+            end,
+        },
+    },
+
+    -- return { kind: string, type: seconds|keyof(defines.events), key: integer }
+    add_handler = function(self, kind, type, handler)
+        local key = self.next_key
+        self.next_key = self.next_key + 1
+
+        local handlers = set_default(self.handlers[kind], type, {})
+        handlers[key] = handler
+        self.connection[kind].continue(self, type)
+
+        return { kind = kind, type = type, key = key }
+    end,
+
+    on_event = function(self, event_type, handler)
+        return self:add_handler("events", event_type, handler)
+    end,
+
+    on_nth_tick = function(self, n, handler)
+        return self:add_handler("nth_tick", n, handler)
+    end,
+
+    cancel = function(self, sub)
+        local handlers = self.handlers[sub.kind][sub.type]
+        handlers[sub.key] = nil
+        if not next(handlers) then
+            self.handlers[sub.kind][sub.type] = nil
+            self.connection[sub.kind].cancel(self, sub.type)
+        end
+    end,
+
+    connect = function (self)
+        self.connected = true
+        for kind, connection in pairs(self.connection) do
+            for type in pairs(self.handlers[kind]) do
+                connection.continue(self, type)
+            end
+        end
+    end,
+
+    disconnect = function (self)
+        self.connected = false
+        for kind, connection in pairs(self.connection) do
+            for type in pairs(self.handlers[kind]) do
+                connection.cancel(self, type)
+            end
+        end
     end,
 }
 
 function on_next_tick(oneshot_action)
-    ticks_dispatch:on_nth_tick_once(1, oneshot_action)
+    local sub
+    sub = events_dispatch:on_nth_tick(1, function(event)
+        events_dispatch:cancel(sub)
+        oneshot_action(event)
+    end)
 end
 
 -- Note: There are many functions/properties in Factorio API
@@ -109,7 +167,7 @@ function item_match(item_like, filter_like)
     return item_name == filter_name and item_quality == filter_quality
 end
 
--- Common lua utilities
+-- MARK: Common lua
 
 function set_default(table, key, initial_value)
     local value = table[key]
@@ -138,7 +196,7 @@ function some(tbl, predicate)
     return false
 end
 
--- Types
+-- MARK: Types
 
 if false then
     ---@class (exact) Data

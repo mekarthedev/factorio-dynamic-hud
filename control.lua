@@ -5,8 +5,8 @@ require("commons")
 --        - TaskList shows list of tasks in "keep open" mode
 -- #todo: test in multiplayer
 
--- The "nth tick" counts from 0, not from the moment of subscribing to the event
--- More frequent checks mean having measured time intervals closer to ideal time intervals
+-- The "nth tick" counts from 0, not from the moment of subscribing to the event.
+-- More frequent checks mean having measured time intervals closer to ideal time intervals.
 local hud_check_period = ticks_per_second / 2
 
 -- In case hud update delay is set to 0, notification-type updates to UI still need to be indicated.
@@ -146,9 +146,11 @@ function update_hud(player_index)
     end
 end
 
+local scheduled_update
 function schedule_hud_update()
-    -- #todo: use `ticks_dispatch`
-    script.on_nth_tick(hud_check_period, function(e)
+    if scheduled_update then return end
+
+    scheduled_update = events_dispatch:on_nth_tick(hud_check_period, function(e)
         local wait_more = false
 
         for player_index, state in pairs(storage.per_player) do
@@ -168,7 +170,8 @@ function schedule_hud_update()
         end
 
         if not wait_more then
-            script.on_nth_tick(hud_check_period, nil)
+            events_dispatch:cancel(scheduled_update)
+            scheduled_update = nil
         end
     end)
 end
@@ -234,16 +237,16 @@ local function setup_all()
     end
 end
 
---------
+-- MARK: Initialization
 
 script.on_init(function()
-    subscriptions:subscribe_all()
+    events_dispatch:connect()
     -- most of "first launch" code should go to `on_configuration_changed`
 end)
 
 script.on_load(function()
     if some(storage.per_player, function(s) return s.dynamic_hud_enabled end) then
-        subscriptions:subscribe_all()
+        events_dispatch:connect()
     end
 end)
 
@@ -269,11 +272,11 @@ script.on_event(own"activate", function(event)
 
     if state.dynamic_hud_enabled then
         -- run `setup` instead of `update_hud` to synchronize state with possibly changed reality
-        if not subscriptions.subscribed then
-            subscriptions:subscribe_all()
+        if not events_dispatch.connected then
+            events_dispatch:connect()
             setup_all()
         else
-            -- Technically this is not needed because as long as `subscriptions` is up
+            -- Technically this is not needed because as long as `events_dispatch` is connected
             -- every player has their state up-to-date regardless of their `dynamic_hud_enabled`.
             -- Might be helpful in development.
             setup(event.player_index)
@@ -283,20 +286,20 @@ script.on_event(own"activate", function(event)
         update_hud(event.player_index)
 
         if every(storage.per_player, function(s) return not s.dynamic_hud_enabled end) then
-            subscriptions:unsubscribe_all()
+            events_dispatch:disconnect()
         end
     end
 end)
 
---------
+-- MARK: General UI
 
 -- The system UI elements somehow aren't affected
 -- while the new game cutscene is playing
-subscriptions:on_event(defines.events.on_cutscene_cancelled, function(event)
+events_dispatch:on_event(defines.events.on_cutscene_cancelled, function(event)
     update_hud(event.player_index)
 end)
 
-subscriptions:on_event(defines.events.on_cutscene_finished, function(event)
+events_dispatch:on_event(defines.events.on_cutscene_finished, function(event)
     update_hud(event.player_index)
 end)
 
@@ -304,7 +307,7 @@ function sync.opened_gui(state, player)
     state.opened_gui = player.opened_gui_type
 end
 
-subscriptions:on_event(defines.events.on_gui_opened, function(event)
+events_dispatch:on_event(defines.events.on_gui_opened, function(event)
     local player = game.get_player(event.player_index)
     local state = storage.per_player[event.player_index]
 
@@ -313,7 +316,7 @@ subscriptions:on_event(defines.events.on_gui_opened, function(event)
     update_hud(event.player_index)
 end)
 
-subscriptions:on_event(defines.events.on_gui_closed, function(event)
+events_dispatch:on_event(defines.events.on_gui_closed, function(event)
     local player = game.get_player(event.player_index)
     local state = storage.per_player[event.player_index]
 
@@ -326,16 +329,29 @@ subscriptions:on_event(defines.events.on_gui_closed, function(event)
     update_hud(event.player_index)
 end)
 
-subscriptions:on_event(own"increase-ui-scale", function(event)
+events_dispatch:on_event(own"increase-ui-scale", function(event)
     update_hud_bacause("ui_updated", event.player_index, event.tick)
 end)
 
-subscriptions:on_event(own"decrease-ui-scale", function(event)
+events_dispatch:on_event(own"decrease-ui-scale", function(event)
     update_hud_bacause("ui_updated", event.player_index, event.tick)
 end)
 
-subscriptions:on_event(own"reset-ui-scale", function(event)
+events_dispatch:on_event(own"reset-ui-scale", function(event)
     update_hud_bacause("ui_updated", event.player_index, event.tick)
+end)
+
+events_dispatch:on_event(defines.events.on_player_controller_changed, function(event)
+    local state = storage.per_player[event.player_index]
+    state.time_of.controller_changed = event.tick
+    -- It is possible to sit into a vehicle and then remotely "enter" another vehicle.
+    -- `on_player_driving_changed_state` won't fire when going back.
+    sync.driving_mode(state, game.get_player(event.player_index))
+    update_hud(event.player_index)
+end)
+
+events_dispatch:on_event(defines.events.on_player_changed_surface, function(event)
+    update_hud_bacause("surface_changed", event.player_index, event.tick)
 end)
 
 local function on_active_research_updated(tick, force)
@@ -344,15 +360,15 @@ local function on_active_research_updated(tick, force)
     end
 end
 
-subscriptions:on_event(defines.events.on_research_started, function(event)
+events_dispatch:on_event(defines.events.on_research_started, function(event)
     on_active_research_updated(event.tick, event.research.force)
 end)
 
-subscriptions:on_event(defines.events.on_research_finished, function(event)
+events_dispatch:on_event(defines.events.on_research_finished, function(event)
     on_active_research_updated(event.tick, event.research.force)
 end)
 
-subscriptions:on_event(defines.events.on_research_cancelled, function(event)
+events_dispatch:on_event(defines.events.on_research_cancelled, function(event)
     -- the goal is to update HUD only if the queue head was cancelled
     -- if queue is still not empty then `started` would fire for next tech
     if #event.force.research_queue == 0 then
@@ -360,7 +376,7 @@ subscriptions:on_event(defines.events.on_research_cancelled, function(event)
     end
 end)
 
-subscriptions:on_event(own"pin", function(event)
+events_dispatch:on_event(own"pin", function(event)
     -- There is no API to hide list of pins.
     -- Also it doesn't appear if right side views are currently hidden,
     -- but it doesn't hide when right side views are told to hide.
@@ -368,6 +384,8 @@ subscriptions:on_event(own"pin", function(event)
     -- Show minimap to force list of pins out of hiding.
     update_hud_bacause("minimap_updated", event.player_index, event.tick)
 end)
+
+-- MARK: Cursor
 
 function sync.in_cursor(state, player)
     local cursor_stack = player.cursor_stack
@@ -387,7 +405,7 @@ function sync.in_cursor(state, player)
     state.in_cursor = in_cursor
 end
 
-subscriptions:on_event(defines.events.on_player_cursor_stack_changed, function(event)
+events_dispatch:on_event(defines.events.on_player_cursor_stack_changed, function(event)
     local state = storage.per_player[event.player_index]
     local player = game.get_player(event.player_index)
     local in_cursor_before = state.in_cursor
@@ -408,34 +426,36 @@ subscriptions:on_event(defines.events.on_player_cursor_stack_changed, function(e
     end
 end)
 
-subscriptions:on_event(own"next-weapon", function(event)
+-- MARK: Combat
+
+events_dispatch:on_event(own"next-weapon", function(event)
     update_hud_bacause("toolbar_updated", event.player_index, event.tick)
 end)
 
-subscriptions:on_event(defines.events.on_player_armor_inventory_changed, function(event)
+events_dispatch:on_event(defines.events.on_player_armor_inventory_changed, function(event)
     update_hud_bacause("toolbar_updated", event.player_index, event.tick)
 end)
 
-subscriptions:on_event(defines.events.on_player_gun_inventory_changed, function(event)
+events_dispatch:on_event(defines.events.on_player_gun_inventory_changed, function(event)
     update_hud_bacause("toolbar_updated", event.player_index, event.tick)
 end)
 
-subscriptions:on_event(defines.events.on_player_ammo_inventory_changed, function(event)
+events_dispatch:on_event(defines.events.on_player_ammo_inventory_changed, function(event)
     update_hud_bacause("toolbar_updated", event.player_index, event.tick)
 end)
 
-subscriptions:on_event(own"shoot-enemy", function(event)
+events_dispatch:on_event(own"shoot-enemy", function(event)
     local state = storage.per_player[event.player_index]
     state.time_of.involved_in_combat = event.tick
     state.time_of.toolbar_updated = event.tick
     update_hud(event.player_index)
 end)
 
-subscriptions:on_event(own"shoot-selected", function(event)
+events_dispatch:on_event(own"shoot-selected", function(event)
     update_hud_bacause("toolbar_updated", event.player_index, event.tick)
 end)
 
-subscriptions:on_event(defines.events.on_entity_damaged, function(event)
+events_dispatch:on_event(defines.events.on_entity_damaged, function(event)
     local attacker = event.cause or event.source  -- it is unclear if both can be nil at the same time
     local victim = event.entity
 
@@ -460,6 +480,8 @@ subscriptions:on_event(defines.events.on_entity_damaged, function(event)
     end
 end)
 
+-- MARK: Driving
+
 function sync.driving_mode(state, player)
     if not player.driving or not player.vehicle then  -- it's uknown if vehicle can be nil when driving
         state.driving_mode = driving_mode.not_driving
@@ -478,7 +500,7 @@ function sync.driving_mode(state, player)
     end
 end
 
-subscriptions:on_event(defines.events.on_player_driving_changed_state, function(event)
+events_dispatch:on_event(defines.events.on_player_driving_changed_state, function(event)
     local state = storage.per_player[event.player_index]
     local player = game.get_player(event.player_index)
 
@@ -499,7 +521,7 @@ subscriptions:on_event(defines.events.on_player_driving_changed_state, function(
     update_hud(event.player_index)
 end)
 
-subscriptions:on_event(defines.events.on_object_destroyed, function(event)
+events_dispatch:on_event(defines.events.on_object_destroyed, function(event)
     if event.type ~= defines.target_type.entity then return end
     local related_players = storage.entity_related_players[event.useful_id]
     if not related_players then return end
@@ -511,20 +533,7 @@ subscriptions:on_event(defines.events.on_object_destroyed, function(event)
     storage.entity_related_players[event.useful_id] = nil
 end)
 
-subscriptions:on_event(defines.events.on_player_controller_changed, function(event)
-    local state = storage.per_player[event.player_index]
-    state.time_of.controller_changed = event.tick
-    -- It is possible to sit into a vehicle and then remotely "enter" another vehicle.
-    -- `on_player_driving_changed_state` won't fire when going back.
-    sync.driving_mode(state, game.get_player(event.player_index))
-    update_hud(event.player_index)
-end)
-
-subscriptions:on_event(defines.events.on_player_changed_surface, function(event)
-    update_hud_bacause("surface_changed", event.player_index, event.tick)
-end)
-
---------
+-- MARK: Quickbar
 
 local function update_hud_with_quickbar_workaround(player_index, tick)
     if game.get_player(player_index).game_view_settings.show_quickbar then
@@ -541,7 +550,7 @@ local function update_hud_with_quickbar_workaround(player_index, tick)
     end)
 end
 
-subscriptions:on_event(own"rotate-active-quick-bars", function(event)
+events_dispatch:on_event(own"rotate-active-quick-bars", function(event)
     update_hud_with_quickbar_workaround(event.player_index, event.tick)
 end)
 
@@ -568,16 +577,16 @@ local function shift_selected_quickbar_workaround(direction, player_index, tick)
     end)
 end
 
-subscriptions:on_event(own"next-active-quick-bar"	, function(event)
+events_dispatch:on_event(own"next-active-quick-bar"	, function(event)
     shift_selected_quickbar_workaround(1, event.player_index, event.tick)
 end)
 
-subscriptions:on_event(own"previous-active-quick-bar", function(event)
+events_dispatch:on_event(own"previous-active-quick-bar", function(event)
     shift_selected_quickbar_workaround(-1, event.player_index, event.tick)
 end)
 
 for i = 1, 10 do
-    subscriptions:on_event(own("action-bar-select-page-"..i), function(event)
+    events_dispatch:on_event(own("action-bar-select-page-"..i), function(event)
         update_hud_with_quickbar_workaround(event.player_index, event.tick)
     end)
 end
@@ -731,14 +740,14 @@ local function on_quickslot_button(screen_page, slot_index, event)
 end
 
 for i = 1, 10 do
-    subscriptions:on_event(own("quick-bar-button-"..i), function(event)
+    events_dispatch:on_event(own("quick-bar-button-"..i), function(event)
         on_quickslot_button(1, i, event)
     end)
-    subscriptions:on_event(own("quick-bar-button-"..i.."-secondary"), function(event)
+    events_dispatch:on_event(own("quick-bar-button-"..i.."-secondary"), function(event)
         on_quickslot_button(2, i, event)
     end)
 end
 
-subscriptions:on_event(defines.events.on_player_set_quick_bar_slot, function(event)
+events_dispatch:on_event(defines.events.on_player_set_quick_bar_slot, function(event)
     update_hud_bacause("quickbar_interaction", event.player_index, event.tick)
 end)
