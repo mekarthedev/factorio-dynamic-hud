@@ -1,4 +1,12 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.1.0
+Date: 2026-04-26
+  Features:
+    - Added auto-hiding for alerts panel when there where no changes to active alerts for too long.
+    - Added a setting allowing to disable alerts auto-hiding and related computational costs.
+  Changes:
+    - Briefly show UI after new game cutscene.
+---------------------------------------------------------------------------------------------------
 Version: 1.0.2
 Date: 2026-04-24
   Bugfixes:
