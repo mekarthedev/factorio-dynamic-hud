@@ -4,9 +4,15 @@ require("commons")
 --        - StatsGui uses gui.screen to show stats similar to ups
 --        - TaskList shows list of tasks in "keep open" mode
 -- #todo: test in multiplayer
+--        - passengers in cars
+--        - spectator
+--        - on_player_removed vs on_player_left_game
+-- #todo: test tips
+-- #todo: connect/disconnect events when players go online/offline
 -- #todo: upcoming in 2.1
 --        - support show_pins_gui: https://forums.factorio.com/viewtopic.php?t=133423
 --        - remove quckbar workaround: https://forums.factorio.com/viewtopic.php?t=133377
+-- #todo: show custom short lived "no more alerts" alert as a replacement for built-in hiding when no alerts
 
 -- The "nth tick" counts from 0, not from the moment of subscribing to the event.
 -- More frequent checks mean having measured time intervals closer to ideal time intervals.
@@ -25,7 +31,12 @@ local minimum_update_delay = {
     quickbar_interaction = 1 * ticks_per_second,  -- quickbars rotation notification
     toolbar_updated = 1 * ticks_per_second,  -- changes in toolbar (including ammo reduction when shooting)
     ui_updated = 1 * ticks_per_second,  -- ui scale changed
-    alerts_updated = math.max(10 * ticks_per_second, alerts_check_period + 1),
+
+    -- Assume `time_of.alerts_updated` is the tick of some previous check.
+    -- Prevent "flickering" by making sure:
+    -- - Visibility duration is larger than period between checks
+    -- - Check happens at least 1 tick before hiding
+    alerts_updated = 1 + math.max(10 * ticks_per_second, alerts_check_period)
 }
 
 local driving_mode = {
@@ -96,6 +107,7 @@ function update_hud(player_index)
 
     local show_alerts = show_all
         or state.time_of.alerts_updated ~= nil
+        or not state.settings.hide_alerts
 
     local show_controller_bars = show_all
         or state.opened_gui == defines.gui_type.item
@@ -230,6 +242,7 @@ local function setup(player_index)
     state.settings.quickbar_workaround_enabled = ps[own"quickbar-workaround-enabled"].value
     state.settings.show_quickbar_on_use = ps[own"show-quickbar-on-use"].value
     state.settings.show_quickbar_in_combat = ps[own"show-quickbar-in-combat"].value
+    state.settings.hide_alerts = ps[own"hide-alerts"].value
     state.settings.hide_top = ps[own"hide-top"].value
     state.settings.hide_left = ps[own"hide-left"].value
     state.settings.hide_goal = ps[own"hide-goal"].value
@@ -399,14 +412,19 @@ end)
 
 -- MARK: Alerts
 
-events_dispatch:on_nth_tick(alerts_check_period, function(event)
-    for _, player in pairs(game.players) do
+local function on_check_alerts_tick(event)
+    for _, player in pairs(game.connected_players) do
         local state = storage.per_player[player.index]
+
+        -- Note: game_view_settings.show_alert_gui isn't a good criteria - time_of might need a refresh
+        if not state.settings.hide_alerts or not state.dynamic_hud_enabled then
+            goto next_player
+        end
 
         -- Note: `get_alerts` cpu time depends on number of active alerts.
         --   It becomes significant when there are thousands of alerts.
         local current_alerts = player.get_alerts{}
-        local already_reported = false
+        local report_alerts_updated = false
 
         for surface_index, per_type in pairs(current_alerts) do
             local previous_per_type = set_default(state.alerts_summary, surface_index, {})
@@ -440,9 +458,9 @@ events_dispatch:on_nth_tick(alerts_check_period, function(event)
                     previous.icon_name = current_icon_name
                     previous.icon_quality = current_icon_quality
 
-                    if not already_reported and current_count > 0 then
-                        already_reported = true
-                        update_hud_bacause("alerts_updated", player.index, event.tick)
+                    -- no need to show panel for a disappeared alert
+                    if current_count > 0 then
+                        report_alerts_updated = true
                     end
                 end
 
@@ -454,8 +472,27 @@ events_dispatch:on_nth_tick(alerts_check_period, function(event)
                 state.alerts_summary[surface] = nil
             end
         end
+
+        if report_alerts_updated then
+            update_hud_bacause("alerts_updated", player.index, event.tick)
+        end
+
+        ::next_player::
     end
-end)
+end
+
+local alerts_check_running
+function sync.check_alerts(state, _)
+    if state.settings.hide_alerts and not alerts_check_running then
+        alerts_check_running = events_dispatch:on_nth_tick(alerts_check_period, on_check_alerts_tick)
+
+    elseif not state.settings.hide_alerts and alerts_check_running then
+        if every(storage.per_player, function(s) return not s.settings.hide_alerts end) then
+            events_dispatch:cancel(alerts_check_running)
+            alerts_check_running = nil
+        end
+    end
+end
 
 -- MARK: Cursor
 

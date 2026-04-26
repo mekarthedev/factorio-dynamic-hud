@@ -207,6 +207,7 @@ if false then
     ---@field events table<string, integer>
     ---@field gui_type table<string, integer>
     ---@field target_type table<string, integer>
+    ---@field alert_type table<string, integer>
     defines = defines
 
     ---@class (exact) LuaBootstrap
@@ -221,6 +222,7 @@ if false then
     ---@class (exact) LuaGameScript
     ---@field get_player fun(player_index: integer): any
     ---@field players table<integer, any>
+    ---@field connected_players any[]
     game = game
 
     ---@class (exact) LuaSettings
