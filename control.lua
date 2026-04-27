@@ -472,8 +472,24 @@ local function on_check_alerts_tick(event)
             end
         end
 
+        if player.character then
+            local followers = player.character.following_robots
+            local followers_count = #followers
+            local last_follower_id = followers_count > 0 and followers[followers_count].unit_number or 0
+
+            local previous = set_default(state.alerts_summary, "following_robots", { count = 0 })
+            if previous.count ~= followers_count or previous.entity_id ~= last_follower_id then
+                previous.count = followers_count
+                previous.entity_id = last_follower_id
+
+                if followers_count > 0 then
+                    report_alerts_updated = true
+                end
+            end
+        end
+
         for surface in pairs(state.alerts_summary) do
-            if not current_alerts[surface] then
+            if type(surface) == "number" and not current_alerts[surface] then
                 state.alerts_summary[surface] = nil
             end
         end
