@@ -45,6 +45,11 @@ local driving_mode = {
     by_player = 2,  -- remote driving
 }
 
+local cursor_type = {
+    wire = 1,
+    combat = 2,
+}
+
 -- Put functions reading current game state here.
 -- `function sync.some_data(state, player)`
 -- No need to try to sync `time_of`. It will be cleared after re-sync.
@@ -118,7 +123,7 @@ function update_hud(player_index)
 
     local in_combat = 
         state.time_of.involved_in_combat ~= nil
-        or state.in_cursor == "combat"  -- #todo: use int enum
+        or state.in_cursor == cursor_type.combat
         or state.time_of.combat_cursor_dropped ~= nil
 
     local show_toolbar = show_controller_bars
@@ -138,7 +143,7 @@ function update_hud(player_index)
         or (in_combat and state.settings.show_quickbar_in_combat)
 
     local show_shortcuts = show_controller_bars
-        or state.in_cursor == "wire"
+        or state.in_cursor == cursor_type.wire
         or state.time_of.wire_cursor_dropped ~= nil
 
     local show_mod_top = show_all or not state.settings.hide_top
@@ -159,7 +164,7 @@ function update_hud(player_index)
 
     -- show_controller_gui makes mouse cursor incorrectly indicate selected stack (e.g. wire).
     player.game_view_settings.show_tool_bar = show_toolbar
-    -- note: hiding the quickbar disables quickbar hotkeys for some reason
+    -- note: hiding the quickbar disables quickbar hotkeys (expected to be fixed in Factorio 2.1)
     player.game_view_settings.show_quickbar = show_quickbar
     player.game_view_settings.show_shortcut_bar = show_shortcuts
     player.game_view_settings.show_alert_gui = show_alerts
@@ -501,14 +506,14 @@ function sync.in_cursor(state, player)
     local in_cursor = nil
     if cursor_stack and cursor_stack.valid_for_read then
         if is_wire[cursor_stack.name] then
-            in_cursor = "wire"
+            in_cursor = cursor_type.wire
 
         elseif cursor_stack.prototype.group.name == "combat"
             or cursor_stack.prototype.capsule_action  -- e.g. fish is not in combat group
                 and cursor_stack.name ~= "cliff-explosives"  -- not for combat
                 and cursor_stack.name ~= "artillery-targeting-remote"  -- no direct involvment
         then
-            in_cursor = "combat"
+            in_cursor = cursor_type.combat
         end
     end
     state.in_cursor = in_cursor
@@ -521,10 +526,10 @@ events_dispatch:on_event(defines.events.on_player_cursor_stack_changed, function
     sync.in_cursor(state, player)
 
     if state.in_cursor ~= in_cursor_before then
-        if state.in_cursor ~= "wire" and in_cursor_before == "wire" then
+        if state.in_cursor ~= cursor_type.wire and in_cursor_before == cursor_type.wire then
             state.time_of.wire_cursor_dropped = event.tick
         end
-        if state.in_cursor ~= "combat" and in_cursor_before == "combat" then
+        if state.in_cursor ~= cursor_type.combat and in_cursor_before == cursor_type.combat then
             state.time_of.combat_cursor_dropped = event.tick
         end
 
