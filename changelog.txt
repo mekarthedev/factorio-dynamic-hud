@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.1.1
+Date: 2026-04-27
+  Bugfixes:
+    - Also take "Followers" (following robots) into account when checking alerts panel for changes.
+---------------------------------------------------------------------------------------------------
 Version: 1.1.0
 Date: 2026-04-26
   Features:
