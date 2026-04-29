@@ -9,7 +9,6 @@ require("commons")
 --        - remove quckbar workaround: https://forums.factorio.com/viewtopic.php?t=133377
 -- #todo: show custom short lived "no more alerts" alert as a replacement for built-in hiding when no alerts
 -- #todo: pretty popup for welcome message instead of console
--- #todo: own"activate" not working in spectator mode
 
 -- The "nth tick" counts from 0, not from the moment of subscribing to the event.
 -- More frequent checks mean having measured time intervals closer to ideal time intervals.
@@ -419,6 +418,13 @@ events_dispatch:on_event(defines.events.on_gui_closed, function(event)
     end
 
     update_hud(event.player_index)
+end)
+
+events_dispatch:on_event(own"open-character-gui", function(event)
+    local player = game.get_player(event.player_index)
+    if player.controller_type == defines.controllers.spectator then
+        update_hud_bacause("inventory_closed", event.player_index, event.tick)
+    end
 end)
 
 events_dispatch:on_event(own"increase-ui-scale", function(event)

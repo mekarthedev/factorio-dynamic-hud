@@ -208,6 +208,7 @@ if false then
     ---@field gui_type table<string, integer>
     ---@field target_type table<string, integer>
     ---@field alert_type table<string, integer>
+    ---@field controllers table<string, integer>
     defines = defines
 
     ---@class (exact) LuaBootstrap

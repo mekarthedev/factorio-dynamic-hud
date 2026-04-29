@@ -5,6 +5,16 @@ data:extend({
         type = "custom-input",
         name = own"activate",
         key_sequence = "ALT + H",
+        enabled_while_spectating = true,
+    },
+    {
+        type = "custom-input",
+        name = own"open-character-gui",
+        linked_game_control = "open-character-gui",
+        key_sequence = "",
+        -- Note (Factorio 2.0.76): it doesn't work for defines.controllers.ghost state.
+        --   And there doesn't seem to be an analog. At least `own"activate"` works.
+        enabled_while_spectating = true,
     },
 
     {
