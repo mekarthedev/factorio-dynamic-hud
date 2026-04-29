@@ -3,16 +3,13 @@ require("commons")
 -- #todo: allow other mods to define when they are allowed to be hidden
 --        - StatsGui uses gui.screen to show stats similar to ups
 --        - TaskList shows list of tasks in "keep open" mode
--- #todo: test in multiplayer
---        - passengers in cars
---        - spectator
---        - on_player_removed vs on_player_left_game
 -- #todo: test tips
--- #todo: connect/disconnect events when players go online/offline
 -- #todo: upcoming in 2.1
 --        - support show_pins_gui: https://forums.factorio.com/viewtopic.php?t=133423
 --        - remove quckbar workaround: https://forums.factorio.com/viewtopic.php?t=133377
 -- #todo: show custom short lived "no more alerts" alert as a replacement for built-in hiding when no alerts
+-- #todo: pretty popup for welcome message instead of console
+-- #todo: own"activate" not working in spectator mode
 
 -- The "nth tick" counts from 0, not from the moment of subscribing to the event.
 -- More frequent checks mean having measured time intervals closer to ideal time intervals.
@@ -50,21 +47,31 @@ local cursor_type = {
     combat = 2,
 }
 
--- Put functions reading current game state here.
--- `function sync.some_data(state, player)`
--- No need to try to sync `time_of`. It will be cleared after re-sync.
--- `entity_related_players` will be cleared before global re-sync.
+-- Put functions reading current state of a player into `sync`.
+-- `function sync.some_player_state(state, player)`
+-- `sync` is guaranteed to run before `bind`.
+-- `sync` is guaranteed to run over all players, not just connected.
+-- No need to try to sync `time_of`.
+-- `entity_related_players` will be cleared before total re-sync.
 local sync = {}
-
 local function sync_state(player_index)
     local state = storage.per_player[player_index]
     local player = game.get_player(player_index)
-
     for _, sync_part in pairs(sync) do
         sync_part(state, player)
     end
+end
 
-    state.time_of = {}
+-- Put functions setting up subscriptions for game events here.
+-- Otherwise, `on_load` might fail if client doesn't subscribe to the same set of events as server.
+-- `function bind.something_eventful()`
+-- `bind` is guaranteed to run after `sync`.
+-- During binding, `game` is not available and `storage` is readonly. I.e. only `on_load`-safe code.
+local bind = {}
+local function update_event_bindings()
+    for _, bind_part in pairs(bind) do
+        bind_part()
+    end
 end
 
 local update_hud, schedule_hud_update
@@ -174,6 +181,12 @@ function update_hud(player_index)
     end
 end
 
+function bind.scheduled_hud_updates()
+    if some(storage.per_player, function(s) return next(s.time_of) ~= nil end) then
+        schedule_hud_update()
+    end
+end
+
 local scheduled_update
 function schedule_hud_update()
     if scheduled_update then return end
@@ -211,25 +224,14 @@ local function update_hud_bacause(event_name, player_index, tick)
     update_hud(player_index)
 end
 
+-- MARK: Initialization
+
 local function setup(player_index)
     -- Note:
     -- After mod is published, presence of some keys
     -- does not indicate presence of other keys.
     -- Always use `set_default()` to add new keys,
     -- `dynamic_hud_enabled` should be the only exception.
-
-    -- Note:
-    -- It is forbidden to update storage during `on_load`,
-    -- and `on_configuration_changed` isn't affected by changes in `control.lua`,
-    -- only by a change in the mod version.
-    --
-    -- So, when in development, `own"activate"` have to be used
-    -- to re-run setup after adding a new state key.
-    --
-    -- For that reason make sure `setup` is always idempotent.
-
-    set_default(storage, "per_player", {})
-    set_default(storage, "entity_related_players", {})
 
     local state = set_default(storage.per_player, player_index, {})
 
@@ -239,6 +241,25 @@ local function setup(player_index)
     end
 
     set_default(state, "settings", {})
+    set_default(state, "time_of", {})
+    set_default(state, "driving_mode", driving_mode.not_driving)
+    set_default(state, "alerts_summary", {})
+end
+
+local function remove(player_index)
+    storage.per_player[player_index] = nil
+    for unit_number, related_players in pairs(storage.entity_related_players) do
+        related_players[player_index] = nil
+        if next(related_players) == nil then
+            storage.entity_related_players[unit_number] = nil
+        end
+    end
+end
+
+local function update(player_index)
+    local state = storage.per_player[player_index]
+
+    -- Not placing in `sync` to guarantee that settings are read before any other `sync`.
     local ps = settings.get_player_settings(player_index)
     state.settings.hud_update_delay = ps[own"delay"].value * ticks_per_second
     state.settings.hide_minimap = ps[own"hide-minimap"].value
@@ -252,73 +273,114 @@ local function setup(player_index)
     state.settings.hide_left = ps[own"hide-left"].value
     state.settings.hide_goal = ps[own"hide-goal"].value
 
-    set_default(state, "time_of", {})
-    set_default(state, "driving_mode", driving_mode.not_driving)
-    set_default(state, "alerts_summary", {})
-
     sync_state(player_index)
     update_hud(player_index)
 end
 
-local function setup_all()
-    storage.entity_related_players = {}
-    for _, player in pairs(game.players) do
-        setup(player.index)
+local function init()
+    -- Note:
+    -- It is forbidden to update storage during `on_load`,
+    -- and `on_configuration_changed` isn't affected by changes in `control.lua`,
+    -- only by a change in the mod version.
+    --
+    -- So, when in development, `own"activate"` have to be used
+    -- to re-run init after adding a new storage/state keys.
+    --
+    -- For that reason make sure `init` is always idempotent.
+
+    set_default(storage, "per_player", {})
+    storage.version = script.active_mods[script.mod_name]
+
+    -- Remove state of removed players
+    storage.entity_related_players = {}  -- reset anything cached
+    local players = game.players
+    for player_index in pairs(storage.per_player) do
+        if not players[player_index] then
+            remove(player_index)
+        end
     end
+    -- Setup new players if any.
+    for _, player in pairs(players) do
+        setup(player.index)
+        update(player.index)
+    end
+
+    update_event_bindings()
 end
 
--- MARK: Initialization
-
 script.on_init(function()
-    events_dispatch:connect()
-    -- most of "first launch" code should go to `on_configuration_changed`
+    init()
 end)
 
 script.on_load(function()
-    if some(storage.per_player, function(s) return s.dynamic_hud_enabled end) then
-        events_dispatch:connect()
-    end
+    -- When hosting or in singleplayer, storage structure could be still outdated during on_load.
+    -- Meaning `on_configuration_changed` is yet to run.
+    -- When in multiplayer, the client is provided with post-`on_configuration_changed` save file.
+    local mod_version = script.active_mods[script.mod_name]
+    if storage.version ~= mod_version then return end
+
+    update_event_bindings()
 end)
 
 script.on_configuration_changed(function(event)
-    setup_all()
+    init()
 end)
 
-script.on_event(defines.events.on_runtime_mod_setting_changed, function(event)
-    if not is_own(event.setting) then return end
+-- MARK: Connect
 
-    if event.setting_type == "runtime-per-user" and event.player_index ~= nil then
-        setup(event.player_index)
+function bind.events_connection()
+    local dynamic_hud_enabled = some(storage.per_player, function(s) return s.online and s.dynamic_hud_enabled end)
+    if dynamic_hud_enabled and not events_dispatch.connected then
+        events_dispatch:connect()
+    elseif not dynamic_hud_enabled and events_dispatch.connected then
+        events_dispatch:disconnect()
     end
-end)
-
-script.on_event(defines.events.on_player_joined_game, function(event)
-    setup(event.player_index)
-end)
+end
 
 script.on_event(own"activate", function(event)
     local state = storage.per_player[event.player_index]
     state.dynamic_hud_enabled = not state.dynamic_hud_enabled
 
-    if state.dynamic_hud_enabled then
-        -- run `setup` instead of `update_hud` to synchronize state with possibly changed reality
-        if not events_dispatch.connected then
-            events_dispatch:connect()
-            setup_all()
-        else
-            -- Technically this is not needed because as long as `events_dispatch` is connected
-            -- every player has their state up-to-date regardless of their `dynamic_hud_enabled`.
-            -- Might be helpful in development.
-            setup(event.player_index)
-        end
-
+    if state.dynamic_hud_enabled and not events_dispatch.connected then
+        -- Synchronize all state with possibly changed reality.
+        -- Note: As long as `events_dispatch` is connected every per-player state is up-to-date
+        --       regardless of their `dynamic_hud_enabled`.
+        init()
     else
         update_hud(event.player_index)
-
-        if every(storage.per_player, function(s) return not s.dynamic_hud_enabled end) then
-            events_dispatch:disconnect()
-        end
+        bind.events_connection()
     end
+end)
+
+function sync.online_status(state, player)
+    state.online = player.connected
+end
+
+script.on_event(defines.events.on_player_joined_game, function(event)
+    setup(event.player_index)
+    update(event.player_index)
+    update_event_bindings()
+end)
+
+script.on_event(defines.events.on_player_left_game, function(event)
+    storage.per_player[event.player_index].online = false
+    update_event_bindings()
+end)
+
+script.on_event(defines.events.on_player_removed, function(event)
+    remove(event.player_index)
+    update_event_bindings()
+end)
+
+events_dispatch:on_event(defines.events.on_runtime_mod_setting_changed, function(event)
+    if not is_own(event.setting) then return end
+
+    if event.setting_type == "runtime-per-user" and event.player_index ~= nil then
+        update(event.player_index)
+    end
+
+    -- For any long running timers that are controlled by settings.
+    update_event_bindings()
 end)
 
 -- MARK: General UI
@@ -503,15 +565,15 @@ local function on_check_alerts_tick(event)
 end
 
 local alerts_check_running
-function sync.check_alerts(state, _)
-    if state.settings.hide_alerts and not alerts_check_running then
+function bind.alerts_checking()
+    local hide_alerts = some(storage.per_player, function(s) return s.online and s.settings.hide_alerts end)
+
+    if hide_alerts and not alerts_check_running then
         alerts_check_running = events_dispatch:on_nth_tick(alerts_check_period, on_check_alerts_tick)
 
-    elseif not state.settings.hide_alerts and alerts_check_running then
-        if every(storage.per_player, function(s) return not s.settings.hide_alerts end) then
-            events_dispatch:cancel(alerts_check_running)
-            alerts_check_running = nil
-        end
+    elseif not hide_alerts and alerts_check_running then
+        events_dispatch:cancel(alerts_check_running)
+        alerts_check_running = nil
     end
 end
 

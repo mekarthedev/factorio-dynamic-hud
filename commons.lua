@@ -217,12 +217,15 @@ if false then
     ---@field on_nth_tick fun(tick: integer, handler: nil|fun(e: { tick: integer }))
     ---@field on_event fun(event_type: string|integer, handler: nil|fun(e))
     ---@field register_on_object_destroyed fun(object: table)
+    ---@field active_mods table<string, string>
+    ---@field mod_name string
     script = script
 
     ---@class (exact) LuaGameScript
     ---@field get_player fun(player_index: integer): any
     ---@field players table<integer, any>
     ---@field connected_players any[]
+    ---@field print fun(msg: string)
     game = game
 
     ---@class (exact) LuaSettings
