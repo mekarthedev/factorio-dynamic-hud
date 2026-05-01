@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.1.3
+Date: 2026-05-01
+  Bugfixes:
+    - Fixed desync in multiplayer in ultra rare case of someone connecting at exact tick
+      someone else pressed a quickbar hotkey.
+---------------------------------------------------------------------------------------------------
 Version: 1.1.2
 Date: 2026-04-29
   Bugfixes:
