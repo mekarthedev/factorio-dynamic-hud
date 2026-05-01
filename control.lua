@@ -9,6 +9,7 @@ require("commons")
 --        - remove quckbar workaround: https://forums.factorio.com/viewtopic.php?t=133377
 -- #todo: show custom short lived "no more alerts" alert as a replacement for built-in hiding when no alerts
 -- #todo: pretty popup for welcome message instead of console
+-- #todo: immediately show alerts on ally entities damaged
 
 -- The "nth tick" counts from 0, not from the moment of subscribing to the event.
 -- More frequent checks mean having measured time intervals closer to ideal time intervals.
@@ -288,6 +289,7 @@ local function init()
     -- For that reason make sure `init` is always idempotent.
 
     set_default(storage, "per_player", {})
+    events_dispatch:use_storage(set_default(storage, "events_dispatch", {}))
     storage.version = script.active_mods[script.mod_name]
 
     -- Remove state of removed players
@@ -318,6 +320,7 @@ script.on_load(function()
     local mod_version = script.active_mods[script.mod_name]
     if storage.version ~= mod_version then return end
 
+    events_dispatch:use_storage(storage.events_dispatch)
     update_event_bindings()
 end)
 
@@ -743,9 +746,11 @@ local function update_hud_with_quickbar_workaround(player_index, tick)
     -- it shows up with outdated state (the state before switching).
     -- See https://forums.factorio.com/viewtopic.php?t=133378
 
-    on_next_tick(function()
-        update_hud_bacause("quickbar_interaction", player_index, tick)
-    end)
+    on_next_tick{"quickbar_interaction", {player_index, tick}}
+end
+function continuations.quickbar_interaction(c)
+    local player_index, tick = c[1], c[2]
+    update_hud_bacause("quickbar_interaction", player_index, tick)
 end
 
 events_dispatch:on_event(own"rotate-active-quick-bars", function(event)
@@ -753,7 +758,8 @@ events_dispatch:on_event(own"rotate-active-quick-bars", function(event)
 end)
 
 local function shift_selected_quickbar_workaround(direction, player_index, tick)
-    if game.get_player(player_index).game_view_settings.show_quickbar then
+    local player = game.get_player(player_index)
+    if player.game_view_settings.show_quickbar then
         update_hud_bacause("quickbar_interaction", player_index, tick)
         return
     end
@@ -762,17 +768,19 @@ local function shift_selected_quickbar_workaround(direction, player_index, tick)
     -- Workaround: do selection yourself.
     -- See https://forums.factorio.com/viewtopic.php?t=133377
 
-    local player = game.get_player(player_index)
     local selected_before = player.get_active_quick_bar_page(1)
+    on_next_tick{"shift_selected_quickbar", {player_index, direction, selected_before, tick}}
+end
+function continuations.shift_selected_quickbar(c)
+    local player_index, direction, selected_before, tick = c[1], c[2], c[3], c[4]
 
-    on_next_tick(function()
-        local selected_after = player.get_active_quick_bar_page(1)
-        -- Detect if the bug is still there.
-        if selected_after == selected_before then
-            player.set_active_quick_bar_page(1, (10 + selected_after - 1 + direction) % 10 + 1)
-        end
-        update_hud_bacause("quickbar_interaction", player_index, tick)
-    end)
+    local player = game.get_player(player_index)
+    local selected_after = player.get_active_quick_bar_page(1)
+    -- Detect if the bug is still there.
+    if selected_after == selected_before then
+        player.set_active_quick_bar_page(1, (10 + selected_after - 1 + direction) % 10 + 1)
+    end
+    update_hud_bacause("quickbar_interaction", player_index, tick)
 end
 
 events_dispatch:on_event(own"next-active-quick-bar"	, function(event)
@@ -809,120 +817,139 @@ local function pick_quickslot_workaround(player, tick, quickbar_screen_page, qui
     local cursor_ghost_before = player.cursor_ghost
 
     -- Give game a chance to properly handle hotkey before applying workaround.
-    on_next_tick(function()
+    on_next_tick{"pick_quickslot", {
+        player.index,
+        quickbar_screen_page,
+        quickbar_slot,
+        cursor_item_before,
+        cursor_record_before,
+        cursor_ghost_before,
+        tick
+    }}
+end
+function continuations.pick_quickslot(c)
+    local player_index = c[1]
+    local quickbar_screen_page = c[2]
+    local quickbar_slot = c[3]
+    local cursor_item_before = c[4]
+    local cursor_record_before = c[5]
+    local cursor_ghost_before = c[6]
+    local tick = c[7]
 
-        local cursor_item_after = cursor_stack.valid_for_read and (cursor_stack.item or cursor_stack) or nil
-        local cursor_record_after = player.cursor_record
-        local cursor_ghost_after = player.cursor_ghost
+    local player = game.get_player(player_index)
+    local cursor_stack = player.cursor_stack
 
-        local function match(before, after)
-            return before == after or before and after and item_match(before, after)
+    local cursor_item_after = cursor_stack.valid_for_read and (cursor_stack.item or cursor_stack) or nil
+    local cursor_record_after = player.cursor_record
+    local cursor_ghost_after = player.cursor_ghost
+
+    local function match(before, after)
+        return before == after or before and after and item_match(before, after)
+    end
+    local same_cursor_as_before =
+        match(cursor_item_before, cursor_item_after)
+        and match(cursor_record_before, cursor_record_after)
+        and match(cursor_ghost_before, cursor_ghost_after)
+
+    -- Detect if bug is not fixed.
+    -- If there are changes to the cursor then the bug is probably fixed.
+    -- Otherwise, cases that will give false positive:
+    --   - having picked non-uniq item, selected quickslot with same entity type
+    --   - having selected a quickslot, selected different quickslot with same setup
+    --   - having empty cursor, selected empty quickslot
+    if not same_cursor_as_before then return end
+
+    local selected_page = player.get_active_quick_bar_page(quickbar_screen_page)
+    local quickslot_filter = player.get_quick_bar_slot(10*(selected_page-1)+quickbar_slot)
+    if type(quickslot_filter) == "string" then
+        quickslot_filter = { name = quickslot_filter, quality = "normal" }
+    end
+
+    -- As there is no way of distinguishing which blueprint or planner is set for the quickslot,
+    -- consider all blueprints and planners as empty slots.
+    --
+    -- Aside from the above and really empty slots, a slot with a remote
+    -- or a blueprint from bp library is also reported by the game as "empty".
+    -- The only thing left is tell the user the hotkey doesn't work
+    -- by clearing the cursor and bringing up the Quickbar.
+    if quickslot_filter and (
+        quickslot_filter.name == "blueprint"
+        or quickslot_filter.name == "blueprint-book"
+        or quickslot_filter.name == "deconstruction-planner"
+        or quickslot_filter.name == "upgrade-planner")
+    then
+        quickslot_filter = nil
+    end
+
+    if not quickslot_filter then
+        update_hud_bacause("quickbar_interaction", player.index, tick)
+    end
+
+    -- Cases:
+    --   empty cursor, found in inventory -> transfer to cursor
+    --   cursor with item, found in inventory -> swap
+    --   cursor with item, missing in inventory -> ghost
+    --      ^ same but required item is already in cursor -> do nothing
+    --   selected quickslot is empty -> clear cursor
+
+    -- Check if cursor needs to be updated.
+    -- Ideally repeated press of the same quickslot should clear cursor,
+    -- But if there are multiple quickslots with same filter,
+    -- there is no way of knowing which one was selected before.
+    if
+        not quickslot_filter and (
+            not cursor_stack.valid_for_read
+            and player.cursor_record == nil
+            and player.cursor_ghost == nil
+        )
+        or quickslot_filter and (
+            cursor_stack.valid_for_read and item_match(cursor_stack, quickslot_filter)
+            or (not cursor_stack.valid_for_read and player.cursor_ghost
+                and item_match(player.cursor_ghost, quickslot_filter))
+        )
+    then return end
+
+    local inventory = player.get_main_inventory()
+    if not inventory then return end
+
+    function play_cursor_stack_sound(action)
+        local sound_path, volume
+        if cursor_stack.valid_for_read then
+            sound_path, volume = action.."/"..cursor_stack.name, 0.75
+        elseif action == "item-pick" and not player.cursor_ghost
+            or action == "item-drop" and player.cursor_ghost then
+            sound_path, volume = "utility/clear_cursor", 1.0
         end
-        local same_cursor_as_before =
-            match(cursor_item_before, cursor_item_after)
-            and match(cursor_record_before, cursor_record_after)
-            and match(cursor_ghost_before, cursor_ghost_after)
-
-        -- Detect if bug is not fixed.
-        -- If there are changes to the cursor then the bug is probably fixed.
-        -- Otherwise, cases that will give false positive:
-        --   - having picked non-uniq item, selected quickslot with same entity type
-        --   - having selected a quickslot, selected different quickslot with same setup
-        --   - having empty cursor, selected empty quickslot
-        if not same_cursor_as_before then return end
-
-        local selected_page = player.get_active_quick_bar_page(quickbar_screen_page)
-        local quickslot_filter = player.get_quick_bar_slot(10*(selected_page-1)+quickbar_slot)
-        if type(quickslot_filter) == "string" then
-            quickslot_filter = { name = quickslot_filter, quality = "normal" }
+        if sound_path and helpers.is_valid_sound_path(sound_path) then
+            -- in the real implementation different sounds are played with different volume
+            player.play_sound{path = sound_path, volume_modifier = volume}
         end
+    end
 
-        -- As there is no way of distinguishing which blueprint or planner is set for the quickslot,
-        -- consider all blueprints and planners as empty slots.
-        --
-        -- Aside from the above and really empty slots, a slot with a remote
-        -- or a blueprint from bp library is also reported by the game as "empty".
-        -- The only thing left is tell the user the hotkey doesn't work
-        -- by clearing the cursor and bringing up the Quickbar.
-        if quickslot_filter and (
-            quickslot_filter.name == "blueprint"
-            or quickslot_filter.name == "blueprint-book"
-            or quickslot_filter.name == "deconstruction-planner"
-            or quickslot_filter.name == "upgrade-planner")
-        then
-            quickslot_filter = nil
-        end
+    play_cursor_stack_sound("item-drop")
 
-        if not quickslot_filter then
-            update_hud_bacause("quickbar_interaction", player.index, tick)
-        end
+    local inventory_stack = quickslot_filter and inventory.find_item_stack(quickslot_filter)
+    if inventory_stack then
+        cursor_stack.swap_stack(inventory_stack)  -- works for empty cursor too
+        player.cursor_ghost = nil
 
-        -- Cases:
-        --   empty cursor, found in inventory -> transfer to cursor
-        --   cursor with item, found in inventory -> swap
-        --   cursor with item, missing in inventory -> ghost
-        --      ^ same but required item is already in cursor -> do nothing
-        --   selected quickslot is empty -> clear cursor
+        play_cursor_stack_sound("item-pick")
 
-        -- Check if cursor needs to be updated.
-        -- Ideally repeated press of the same quickslot should clear cursor,
-        -- But if there are multiple quickslots with same filter,
-        -- there is no way of knowing which one was selected before.
-        if
-            not quickslot_filter and (
-                not cursor_stack.valid_for_read
-                and player.cursor_record == nil
-                and player.cursor_ghost == nil
-            )
-            or quickslot_filter and (
-                cursor_stack.valid_for_read and item_match(cursor_stack, quickslot_filter)
-                or (not cursor_stack.valid_for_read and player.cursor_ghost
-                    and item_match(player.cursor_ghost, quickslot_filter))
-            )
-        then return end
-
-        local inventory = player.get_main_inventory()
-        if not inventory then return end
-
-        function play_cursor_stack_sound(action)
-            local sound_path, volume
-            if cursor_stack.valid_for_read then
-                sound_path, volume = action.."/"..cursor_stack.name, 0.75
-            elseif action == "item-pick" and not player.cursor_ghost
-                or action == "item-drop" and player.cursor_ghost then
-                sound_path, volume = "utility/clear_cursor", 1.0
+    else
+        -- Note: `cursor_record` is readonly
+        if player.clear_cursor() then
+            if quickslot_filter and is_wire[quickslot_filter.name] then
+                cursor_stack.set_stack(quickslot_filter)
+                player.cursor_stack_temporary = true
+            else
+                player.cursor_ghost = quickslot_filter
             end
-            if sound_path and helpers.is_valid_sound_path(sound_path) then
-                -- in the real implementation different sounds are played with different volume
-                player.play_sound{path = sound_path, volume_modifier = volume}
-            end
-        end
-
-        play_cursor_stack_sound("item-drop")
-
-        local inventory_stack = quickslot_filter and inventory.find_item_stack(quickslot_filter)
-        if inventory_stack then
-            cursor_stack.swap_stack(inventory_stack)  -- works for empty cursor too
-            player.cursor_ghost = nil
 
             play_cursor_stack_sound("item-pick")
-
-        else
-            -- Note: `cursor_record` is readonly
-            if player.clear_cursor() then
-                if quickslot_filter and is_wire[quickslot_filter.name] then
-                    cursor_stack.set_stack(quickslot_filter)
-                    player.cursor_stack_temporary = true
-                else
-                    player.cursor_ghost = quickslot_filter
-                end
-
-                play_cursor_stack_sound("item-pick")
-                -- Note: if inventory is full `clear_cursor()` will play the error sound
-                --   and show appropriate hint. No need to do it ourselves.
-            end
+            -- Note: if inventory is full `clear_cursor()` will play the error sound
+            --   and show appropriate hint. No need to do it ourselves.
         end
-    end)
+    end
 end
 
 local function on_quickslot_button(screen_page, slot_index, event)
