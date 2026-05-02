@@ -445,9 +445,12 @@ end)
 events_dispatch:on_event(defines.events.on_player_controller_changed, function(event)
     local state = storage.per_player[event.player_index]
     state.time_of.controller_changed = event.tick
-    -- It is possible to sit into a vehicle and then remotely "enter" another vehicle.
-    -- `on_player_driving_changed_state` won't fire when going back.
-    sync.driving_mode(state, game.get_player(event.player_index))
+    -- Known cases where resync is needed:
+    --   - It is possible to sit into a vehicle and then remotely "enter" another vehicle.
+    --     `on_player_driving_changed_state` won't fire when going back.
+    --   - Having closed inventory, enter editor mode, open inventory, close editor mode.
+    --     -> `opened_gui_type` changes while `on_gui_closed` won't fire.
+    sync_state(event.player_index)
     update_hud(event.player_index)
 end)
 
