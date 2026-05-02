@@ -1,4 +1,11 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.1.4
+Date: 2026-05-02
+  Changes:
+    - Alerts will now be immediately checked for updates when ally entities take damage.
+  Bugfixes:
+    - Fixed UI not hiding after opening inventory in editor mode and then exiting editor mode.
+---------------------------------------------------------------------------------------------------
 Version: 1.1.3
 Date: 2026-05-01
   Bugfixes:
