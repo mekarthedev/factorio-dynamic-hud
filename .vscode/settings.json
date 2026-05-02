@@ -1,0 +1,19 @@
+{
+    "Lua.runtime.version": "Lua 5.2",
+    "Lua.format.enable": false,
+    "Lua.diagnostics.globals": [
+    ],
+    "Lua.diagnostics.disable": [
+        "lowercase-global"
+    ],
+    "Lua.diagnostics.severity": {
+        "assign-type-mismatch": "Error",
+        "missing-parameter": "Error",
+        "missing-return": "Error",
+        "redundant-parameter": "Error",
+        "redundant-value": "Error",
+        "unbalanced-assignments": "Error",
+        "undefined-global": "Error",
+        "undefined-field": "Error"
+    }
+}

@@ -4,7 +4,7 @@ import { $ } from "bun"
 import info from "./info.json"
 
 const modifiedFiles = (await $`git status --porcelain --untracked-files=no`.text()).trim()
-if (modifiedFiles) {
+if (modifiedFiles && !Bun.argv.includes("--unsafe")) {
   throw new Error("Uncommitted changes found; stash or discard before archiving.")
 }
 
@@ -17,4 +17,4 @@ const ignoreFiles = [
   "run.sh.js",
 ].map(f => ":(exclude)" + f)
 
-await $`git archive -o ${zipName}.zip --prefix=${folderName}/ HEAD ${ignoreFiles}`
+await $`git archive -o .ignore/${zipName}.zip --prefix=${folderName}/ HEAD ${ignoreFiles}`

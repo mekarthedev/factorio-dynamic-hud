@@ -7,7 +7,7 @@ if (!instanceName) { throw "Missing instance name" }
 const home = os.homedir()
 const executable = `${home}/Downloads/Factorio_2.0.76/bin/x64/factorio.exe`
 const originalWriteDir = `${home}/AppData/Roaming/Factorio`
-const writeDir = `${import.meta.dir}/.factorio-instances/${instanceName}`
+const writeDir = `${process.cwd()}/.factorio-instances/${instanceName}`
 const configFile = `${writeDir}/config/config.ini`
 
 await $`mkdir -p ${writeDir}`
