@@ -9,13 +9,14 @@ require("commons")
 --        - remove quckbar workaround: https://forums.factorio.com/viewtopic.php?t=133377
 -- #todo: show custom short lived "no more alerts" alert as a replacement for built-in hiding when no alerts
 -- #todo: pretty popup for welcome message instead of console
--- #todo: immediately show alerts on ally entities damaged
 
 -- The "nth tick" counts from 0, not from the moment of subscribing to the event.
 -- More frequent checks mean having measured time intervals closer to ideal time intervals.
 local hud_check_period = ticks_per_second / 2
 
 local alerts_check_period = 5 * ticks_per_second
+
+local default_throttle_threshold = 1 * ticks_per_second
 
 -- In case hud update delay is set to 0, notification-type updates to UI still need to be indicated.
 -- Configure meaningful minimum time to wait before dismissing notification-type updates to UI.
@@ -290,6 +291,9 @@ local function init()
 
     set_default(storage, "per_player", {})
     events_dispatch:use_storage(set_default(storage, "events_dispatch", {}))
+    set_default(storage, "throttle", {})
+    set_default(storage.throttle, "check_alerts", {})  -- per force
+    set_default(storage.throttle, "involved_in_combat", {})  -- per player
     storage.version = script.active_mods[script.mod_name]
 
     -- Remove state of removed players
@@ -491,8 +495,11 @@ end)
 
 -- MARK: Alerts
 
-local function on_check_alerts_tick(event)
-    for _, player in pairs(game.connected_players) do
+---@param players? any[]
+local function check_alerts(event, players)
+    if not players then players = game.connected_players end
+
+    for _, player in pairs(players) do
         local state = storage.per_player[player.index]
 
         -- Note: game_view_settings.show_alert_gui isn't a good criteria - time_of might need a refresh
@@ -581,7 +588,7 @@ function bind.alerts_checking()
     local hide_alerts = some(storage.per_player, function(s) return s.online and s.settings.hide_alerts end)
 
     if hide_alerts and not alerts_check_running then
-        alerts_check_running = events_dispatch:on_nth_tick(alerts_check_period, on_check_alerts_tick)
+        alerts_check_running = events_dispatch:on_nth_tick(alerts_check_period, check_alerts)
 
     elseif not hide_alerts and alerts_check_running then
         events_dispatch:cancel(alerts_check_running)
@@ -615,6 +622,9 @@ events_dispatch:on_event(defines.events.on_player_cursor_stack_changed, function
     local in_cursor_before = state.in_cursor
     sync.in_cursor(state, player)
 
+    -- Note: cursor_stack_changed might be called frequently
+    -- e.g. when building a belt by dragging.
+    -- No need to re-update when there were no changes to cursor type.
     if state.in_cursor ~= in_cursor_before then
         if state.in_cursor ~= cursor_type.wire and in_cursor_before == cursor_type.wire then
             state.time_of.wire_cursor_dropped = event.tick
@@ -623,9 +633,6 @@ events_dispatch:on_event(defines.events.on_player_cursor_stack_changed, function
             state.time_of.combat_cursor_dropped = event.tick
         end
 
-        -- Note: cursor_stack_changed might be called frequently
-        -- e.g. when building a belt by dragging.
-        -- No need to re-update when there were no changes to cursor kind.
         update_hud(event.player_index)
     end
 end)
@@ -673,16 +680,42 @@ events_dispatch:on_event(defines.events.on_entity_damaged, function(event)
             and victim.prototype.group.name ~= "environment"
     then
         local attacker_player_index = attacker and player_index_of(attacker)
-        if attacker_player_index then
+        if attacker_player_index and throttle(
+            storage.throttle.involved_in_combat,
+            attacker_player_index,
+            default_throttle_threshold,
+            event.tick
+        ) then
             update_hud_bacause("involved_in_combat", attacker_player_index, event.tick)
         end
 
         local victim_player_index = player_index_of(victim)
-        if victim_player_index then
+        if victim_player_index and throttle(
+            storage.throttle.involved_in_combat,
+            victim_player_index,
+            default_throttle_threshold,
+            event.tick
+        ) then
             update_hud_bacause("involved_in_combat", victim_player_index, event.tick)
         end
     end
+
+    if throttle(storage.throttle.check_alerts, victim.force.index, alerts_check_period, event.tick) then
+        -- Why not just `"alerts_updated"`? Because damage alert type could be disabled.
+        -- Its hard to be sure if there are any other conditions that need to be taken into account.
+        -- E.g. what if another mod makes custom alerts on damage.
+        --
+        -- Give game a tick to update alerts.
+        on_next_tick{"check_alerts_on_damage", {victim.force.index, event.tick}}
+    end
 end)
+
+function continuations.check_alerts_on_damage(c)
+    local force = game.forces[c[1]]
+    if not force then return end  -- in case a force is removed in the same tick as its entities get damaged
+    local event = {tick = c[2]}
+    check_alerts(event, force.connected_players)
+end
 
 -- MARK: Driving
 

@@ -173,6 +173,16 @@ function continuations.handle_next_tick(c)
     continuations:notify(oneshot_action)
 end
 
+-- Returns `true` if enough time have passed since last `true`.
+function throttle(storage, key, threshold, tick)
+    local last_tick = storage[key]
+    if not last_tick or (tick - last_tick >= threshold) then
+        storage[key] = tick
+        return true
+    end
+    return false
+end
+
 -- MARK: Factorio specifics
 
 ticks_per_second = 60
@@ -281,6 +291,7 @@ if false then
     ---@field get_player fun(player_index: integer): any
     ---@field players table<integer, any>
     ---@field connected_players any[]
+    ---@field forces table<integer, any>
     ---@field print fun(msg: string)
     game = game
 
