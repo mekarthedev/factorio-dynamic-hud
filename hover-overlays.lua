@@ -2,6 +2,8 @@ require "commons"
 require "events-dispatch"
 require "core"
 
+local hover_overlay_thickness = 4
+
 events_dispatch:on_internal("player_setup", function (player_index)
     local player = game.get_player(player_index)
 
@@ -11,7 +13,7 @@ events_dispatch:on_internal("player_setup", function (player_index)
             direction = "horizontal",
             name = own"top_hover"
         }
-        top_hover.style.height = 4
+        top_hover.style.height = hover_overlay_thickness
         top_hover.style.horizontal_align = "center"
 
         local mod_gui_hover = top_hover.add{
@@ -48,7 +50,7 @@ events_dispatch:on_internal("player_setup", function (player_index)
             direction = "horizontal",
             name = own"bottom_hover"
         }
-        bottom_hover.style.height = 4
+        bottom_hover.style.height = hover_overlay_thickness
         bottom_hover.style.horizontal_align = "center"
 
         local toolbar_hover = bottom_hover.add{
@@ -86,7 +88,7 @@ events_dispatch:on_internal("player_setup", function (player_index)
             raise_hover_events = true,
             tags = {[own"on_hover"] = {"surface_list_event", "mods_left_event"}}
         }
-        left_hover.style.width = 4
+        left_hover.style.width = hover_overlay_thickness
     end
 
     if not player.gui.screen[own"right_hover"] then
@@ -96,7 +98,7 @@ events_dispatch:on_internal("player_setup", function (player_index)
             raise_hover_events = true,
             tags = {[own"on_hover"] = {"minimap_event", "map_options_event"}}
         }
-        right_hover.style.width = 4
+        right_hover.style.width = hover_overlay_thickness
     end
 end)
 
@@ -125,7 +127,7 @@ function sync.hover_overlays_location(_, player)
     top_hover.style.width = player.display_resolution.width / player.display_scale
 
     local bottom_hover = player.gui.screen[own"bottom_hover"]
-    bottom_hover.location = { 0, player.display_resolution.height - 4 * player.display_scale }
+    bottom_hover.location = { 0, player.display_resolution.height - hover_overlay_thickness * player.display_scale }
     bottom_hover.style.width = player.display_resolution.width / player.display_scale
 
     local left_hover = player.gui.screen[own"left_hover"]
@@ -133,7 +135,7 @@ function sync.hover_overlays_location(_, player)
     left_hover.style.height = player.display_resolution.height / player.display_scale
 
     local right_hover = player.gui.screen[own"right_hover"]
-    right_hover.location = { player.display_resolution.width - 4 * player.display_scale, 0 }
+    right_hover.location = { player.display_resolution.width - hover_overlay_thickness * player.display_scale, 0 }
     right_hover.style.height = player.display_resolution.height / player.display_scale
 end
 
