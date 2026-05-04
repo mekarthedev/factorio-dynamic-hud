@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.2.0
+Date: 2026-05-04
+  Features:
+    - Added thin areas around edges of the screen that show nearby UI elements when approached
+      with mouse cursor.
+---------------------------------------------------------------------------------------------------
 Version: 1.1.4
 Date: 2026-05-02
   Changes:
