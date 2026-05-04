@@ -32,6 +32,7 @@ events_dispatch = {
     handlers = {
         events = {},  -- { [type]: { [key]: handler } }
         nth_tick = {},  -- { [n]: { [key]: handler } }
+        internal = {},  -- { [name]: { [key]: handler }}
     },
     next_key = 1,
     connected = false,
@@ -94,6 +95,8 @@ events_dispatch = {
                 script.on_nth_tick(n, nil)
             end,
         },
+
+        internal = { continue = function () end, cancel = function () end }
     },
 
     -- continuation = [keyof(continuations), ...paramsof(continuations[string])]
@@ -128,6 +131,10 @@ events_dispatch = {
 
     on_nth_tick = function(self, n, handler)
         return self:add_handler("nth_tick", n, handler)
+    end,
+
+    on_internal = function(self, event_name, handler)
+        return self:add_handler("internal", event_name, handler)
     end,
 
     cancel = function(self, sub)
@@ -266,6 +273,7 @@ end
 if false then
     ---@class (exact) Data
     ---@field extend fun(self, other: table[])
+    ---@field raw table<string, any>
     data = data
 
     ---@class (exact) Defines
@@ -297,6 +305,7 @@ if false then
 
     ---@class (exact) LuaSettings
     ---@field get_player_settings fun(player_index: integer): table<string, { value: number|boolean|string }>
+    ---@field startup table<string, { value: number|boolean|string }>
     settings = settings
 
     ---@type table<string, any>

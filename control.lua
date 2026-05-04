@@ -9,6 +9,8 @@ require("commons")
 --        - remove quckbar workaround: https://forums.factorio.com/viewtopic.php?t=133377
 -- #todo: show custom short lived "no more alerts" alert as a replacement for built-in hiding when no alerts
 -- #todo: pretty popup for welcome message instead of console
+-- #todo: what if a continuation gets renamed in next mod version? See continuations.quickbar_interaction
+-- #todo: show UI on mouse hover on the bottom of the screen
 
 -- The "nth tick" counts from 0, not from the moment of subscribing to the event.
 -- More frequent checks mean having measured time intervals closer to ideal time intervals.
@@ -25,16 +27,16 @@ local default_throttle_threshold = 1 * ticks_per_second
 -- Shooting on the other hand implies changes to the indicator of amount of ammo left.
 local minimum_update_delay = {
     -- [keyof(state.time_of)] = integer ticks
-    research_updated = 2 * ticks_per_second,  -- finished research notification
-    quickbar_interaction = 1 * ticks_per_second,  -- quickbars rotation notification
-    toolbar_updated = 1 * ticks_per_second,  -- changes in toolbar (including ammo reduction when shooting)
-    ui_updated = 1 * ticks_per_second,  -- ui scale changed
+    research_event = 2 * ticks_per_second,  -- finished research notification
+    quickbar_event = 1 * ticks_per_second,  -- quickbars rotation notification
+    toolbar_event = 1 * ticks_per_second,  -- changes in toolbar (including ammo reduction when shooting)
+    all_ui_event = 1 * ticks_per_second,  -- ui scale changed
 
-    -- Assume `time_of.alerts_updated` is the tick of some previous check.
+    -- Assume `time_of.alerts_event` is the tick of some previous check.
     -- Prevent "flickering" by making sure:
     -- - Visibility duration is larger than period between checks
     -- - Check happens at least 1 tick before hiding
-    alerts_updated = 1 + math.max(10 * ticks_per_second, alerts_check_period)
+    alerts_event = 1 + math.max(10 * ticks_per_second, alerts_check_period)
 }
 
 local driving_mode = {
@@ -80,12 +82,14 @@ local update_hud, schedule_hud_update
 -- MARK: update_hud()
 function update_hud(player_index)
     local state = storage.per_player[player_index]
+    local time_of = state.time_of
+    local settings = state.settings
     local player = game.get_player(player_index)
 
-    if state.settings.hud_update_delay == 0 then
-        for event in pairs(state.time_of) do
+    if settings.hud_update_delay == 0 then
+        for event in pairs(time_of) do
             if not minimum_update_delay[event] then
-                state.time_of[event] = nil
+                time_of[event] = nil
             end
         end
     end
@@ -96,31 +100,33 @@ function update_hud(player_index)
 
     local show_all = not state.dynamic_hud_enabled
         or state.opened_gui == defines.gui_type.controller
-        or state.time_of.inventory_closed ~= nil
-        or state.time_of.ui_updated ~= nil
+        or time_of.inventory_closed ~= nil
+        or time_of.all_ui_event ~= nil
 
     local show_research = show_all
-        or state.time_of.research_updated ~= nil
+        or time_of.research_event ~= nil
     local show_side_menu = show_all
+        or time_of.side_menu_event ~= nil
         or state.opened_gui == defines.gui_type.logistic
         or state.opened_gui == defines.gui_type.production
         or state.opened_gui == defines.gui_type.trains
         or state.opened_gui == defines.gui_type.achievement
         or state.opened_gui == defines.gui_type.bonus
     local show_minimap = show_all
-        or (state.driving_mode ~= driving_mode.not_driving and state.settings.show_minimap_while_driving)
-        or state.time_of.minimap_updated ~= nil
-        or not state.settings.hide_minimap
+        or (state.driving_mode ~= driving_mode.not_driving and settings.show_minimap_while_driving)
+        or time_of.minimap_event ~= nil
+        or not settings.hide_minimap
 
     local show_map_options = show_all
-        or state.time_of.controller_changed ~= nil
+        or time_of.controller_changed ~= nil
+        or time_of.map_options_event ~= nil
     local show_surface_list = show_all
-        or state.time_of.controller_changed ~= nil
-        or state.time_of.surface_changed ~= nil
+        or time_of.controller_changed ~= nil
+        or time_of.surface_list_event ~= nil
 
     local show_alerts = show_all
-        or state.time_of.alerts_updated ~= nil
-        or not state.settings.hide_alerts
+        or time_of.alerts_event ~= nil
+        or not settings.hide_alerts
 
     local show_controller_bars = show_all
         or state.opened_gui == defines.gui_type.item
@@ -130,12 +136,12 @@ function update_hud(player_index)
         or state.opened_gui == defines.gui_type.blueprint_library
 
     local in_combat = 
-        state.time_of.involved_in_combat ~= nil
+        time_of.involved_in_combat ~= nil
         or state.in_cursor == cursor_type.combat
-        or state.time_of.combat_cursor_dropped ~= nil
+        or time_of.combat_cursor_dropped ~= nil
 
     local show_toolbar = show_controller_bars
-        or state.time_of.toolbar_updated ~= nil
+        or time_of.toolbar_event ~= nil
         or in_combat
         -- Workaround (Factorio v2.0.76):
         -- The vehicle toolbar is not affected by `show_tool_bar` while driving with a character
@@ -146,17 +152,23 @@ function update_hud(player_index)
         or state.driving_mode == driving_mode.by_character
 
     local show_quickbar = show_controller_bars
-        or state.time_of.quickbar_interaction ~= nil
-        or not state.settings.hide_quickbar
-        or (in_combat and state.settings.show_quickbar_in_combat)
+        or time_of.quickbar_event ~= nil
+        or not settings.hide_quickbar
+        or (in_combat and settings.show_quickbar_in_combat)
 
     local show_shortcuts = show_controller_bars
         or state.in_cursor == cursor_type.wire
-        or state.time_of.wire_cursor_dropped ~= nil
+        or time_of.shortcuts_event ~= nil
 
-    local show_mod_top = show_all or not state.settings.hide_top
-    local show_mod_left = show_all or not state.settings.hide_left
-    local show_goal = show_all or not state.settings.hide_goal
+    local show_mod_top = show_all
+        or time_of.mods_top_event ~= nil
+        or not settings.hide_top
+    local show_mod_left = show_all
+        or time_of.mods_left_event ~= nil
+        or not settings.hide_left
+    local show_goal = show_all
+        or time_of.mods_left_event ~= nil  -- whatever while goal cannot be hidden
+        or not settings.hide_goal
 
     player.game_view_settings.show_research_info = show_research
     player.game_view_settings.show_side_menu = show_side_menu
@@ -177,7 +189,7 @@ function update_hud(player_index)
     player.game_view_settings.show_shortcut_bar = show_shortcuts
     player.game_view_settings.show_alert_gui = show_alerts
 
-    if next(state.time_of) ~= nil then
+    if next(time_of) ~= nil then
         schedule_hud_update()
     end
 end
@@ -245,6 +257,8 @@ local function setup(player_index)
     set_default(state, "time_of", {})
     set_default(state, "driving_mode", driving_mode.not_driving)
     set_default(state, "alerts_summary", {})
+
+    events_dispatch:notify("internal", "player_setup", player_index)
 end
 
 local function remove(player_index)
@@ -394,11 +408,11 @@ end)
 -- The system UI elements somehow aren't affected
 -- while the new game cutscene is playing
 events_dispatch:on_event(defines.events.on_cutscene_cancelled, function(event)
-    update_hud_bacause("ui_updated", event.player_index, event.tick)
+    update_hud_bacause("all_ui_event", event.player_index, event.tick)
 end)
 
 events_dispatch:on_event(defines.events.on_cutscene_finished, function(event)
-    update_hud_bacause("ui_updated", event.player_index, event.tick)
+    update_hud_bacause("all_ui_event", event.player_index, event.tick)
 end)
 
 function sync.opened_gui(state, player)
@@ -435,15 +449,15 @@ events_dispatch:on_event(own"open-character-gui", function(event)
 end)
 
 events_dispatch:on_event(own"increase-ui-scale", function(event)
-    update_hud_bacause("ui_updated", event.player_index, event.tick)
+    update_hud_bacause("all_ui_event", event.player_index, event.tick)
 end)
 
 events_dispatch:on_event(own"decrease-ui-scale", function(event)
-    update_hud_bacause("ui_updated", event.player_index, event.tick)
+    update_hud_bacause("all_ui_event", event.player_index, event.tick)
 end)
 
 events_dispatch:on_event(own"reset-ui-scale", function(event)
-    update_hud_bacause("ui_updated", event.player_index, event.tick)
+    update_hud_bacause("all_ui_event", event.player_index, event.tick)
 end)
 
 events_dispatch:on_event(defines.events.on_player_controller_changed, function(event)
@@ -459,12 +473,12 @@ events_dispatch:on_event(defines.events.on_player_controller_changed, function(e
 end)
 
 events_dispatch:on_event(defines.events.on_player_changed_surface, function(event)
-    update_hud_bacause("surface_changed", event.player_index, event.tick)
+    update_hud_bacause("surface_list_event", event.player_index, event.tick)
 end)
 
 local function on_active_research_updated(tick, force)
     for _, player in pairs(force.players) do
-        update_hud_bacause("research_updated", player.index, tick)
+        update_hud_bacause("research_event", player.index, tick)
     end
 end
 
@@ -485,12 +499,12 @@ events_dispatch:on_event(defines.events.on_research_cancelled, function(event)
 end)
 
 events_dispatch:on_event(own"pin", function(event)
-    -- There is no API to hide list of pins.
+    -- There is no API to hide list of pins (expected in Factorio v2.1).
     -- Also it doesn't appear if right side views are currently hidden,
     -- but it doesn't hide when right side views are told to hide.
     -- See https://forums.factorio.com/viewtopic.php?t=133423
     -- Show minimap to force list of pins out of hiding.
-    update_hud_bacause("minimap_updated", event.player_index, event.tick)
+    update_hud_bacause("minimap_event", event.player_index, event.tick)
 end)
 
 -- MARK: Alerts
@@ -576,7 +590,7 @@ local function check_alerts(event, players)
         end
 
         if report_alerts_updated then
-            update_hud_bacause("alerts_updated", player.index, event.tick)
+            update_hud_bacause("alerts_event", player.index, event.tick)
         end
 
         ::next_player::
@@ -627,7 +641,7 @@ events_dispatch:on_event(defines.events.on_player_cursor_stack_changed, function
     -- No need to re-update when there were no changes to cursor type.
     if state.in_cursor ~= in_cursor_before then
         if state.in_cursor ~= cursor_type.wire and in_cursor_before == cursor_type.wire then
-            state.time_of.wire_cursor_dropped = event.tick
+            state.time_of.shortcuts_event = event.tick
         end
         if state.in_cursor ~= cursor_type.combat and in_cursor_before == cursor_type.combat then
             state.time_of.combat_cursor_dropped = event.tick
@@ -640,30 +654,30 @@ end)
 -- MARK: Combat
 
 events_dispatch:on_event(own"next-weapon", function(event)
-    update_hud_bacause("toolbar_updated", event.player_index, event.tick)
+    update_hud_bacause("toolbar_event", event.player_index, event.tick)
 end)
 
 events_dispatch:on_event(defines.events.on_player_armor_inventory_changed, function(event)
-    update_hud_bacause("toolbar_updated", event.player_index, event.tick)
+    update_hud_bacause("toolbar_event", event.player_index, event.tick)
 end)
 
 events_dispatch:on_event(defines.events.on_player_gun_inventory_changed, function(event)
-    update_hud_bacause("toolbar_updated", event.player_index, event.tick)
+    update_hud_bacause("toolbar_event", event.player_index, event.tick)
 end)
 
 events_dispatch:on_event(defines.events.on_player_ammo_inventory_changed, function(event)
-    update_hud_bacause("toolbar_updated", event.player_index, event.tick)
+    update_hud_bacause("toolbar_event", event.player_index, event.tick)
 end)
 
 events_dispatch:on_event(own"shoot-enemy", function(event)
     local state = storage.per_player[event.player_index]
     state.time_of.involved_in_combat = event.tick
-    state.time_of.toolbar_updated = event.tick
+    state.time_of.toolbar_event = event.tick
     update_hud(event.player_index)
 end)
 
 events_dispatch:on_event(own"shoot-selected", function(event)
-    update_hud_bacause("toolbar_updated", event.player_index, event.tick)
+    update_hud_bacause("toolbar_event", event.player_index, event.tick)
 end)
 
 events_dispatch:on_event(defines.events.on_entity_damaged, function(event)
@@ -701,7 +715,7 @@ events_dispatch:on_event(defines.events.on_entity_damaged, function(event)
     end
 
     if throttle(storage.throttle.check_alerts, victim.force.index, alerts_check_period, event.tick) then
-        -- Why not just `"alerts_updated"`? Because damage alert type could be disabled.
+        -- Why not just `"alerts_event"`? Because damage alert type could be disabled.
         -- Its hard to be sure if there are any other conditions that need to be taken into account.
         -- E.g. what if another mod makes custom alerts on damage.
         --
@@ -774,7 +788,7 @@ end)
 
 local function update_hud_with_quickbar_workaround(player_index, tick)
     if game.get_player(player_index).game_view_settings.show_quickbar then
-        update_hud_bacause("quickbar_interaction", player_index, tick)
+        update_hud_bacause("quickbar_event", player_index, tick)
         return
     end
 
@@ -786,7 +800,7 @@ local function update_hud_with_quickbar_workaround(player_index, tick)
 end
 function continuations.quickbar_interaction(c)
     local player_index, tick = c[1], c[2]
-    update_hud_bacause("quickbar_interaction", player_index, tick)
+    update_hud_bacause("quickbar_event", player_index, tick)
 end
 
 events_dispatch:on_event(own"rotate-active-quick-bars", function(event)
@@ -796,7 +810,7 @@ end)
 local function shift_selected_quickbar_workaround(direction, player_index, tick)
     local player = game.get_player(player_index)
     if player.game_view_settings.show_quickbar then
-        update_hud_bacause("quickbar_interaction", player_index, tick)
+        update_hud_bacause("quickbar_event", player_index, tick)
         return
     end
 
@@ -816,7 +830,7 @@ function continuations.shift_selected_quickbar(c)
     if selected_after == selected_before then
         player.set_active_quick_bar_page(1, (10 + selected_after - 1 + direction) % 10 + 1)
     end
-    update_hud_bacause("quickbar_interaction", player_index, tick)
+    update_hud_bacause("quickbar_event", player_index, tick)
 end
 
 events_dispatch:on_event(own"next-active-quick-bar"	, function(event)
@@ -918,7 +932,7 @@ function continuations.pick_quickslot(c)
     end
 
     if not quickslot_filter then
-        update_hud_bacause("quickbar_interaction", player.index, tick)
+        update_hud_bacause("quickbar_event", player.index, tick)
     end
 
     -- Cases:
@@ -996,7 +1010,7 @@ local function on_quickslot_button(screen_page, slot_index, event)
     end
 
     if state.settings.show_quickbar_on_use then
-        update_hud_bacause("quickbar_interaction", event.player_index, event.tick)
+        update_hud_bacause("quickbar_event", event.player_index, event.tick)
     end
 end
 
@@ -1010,5 +1024,150 @@ for i = 1, 10 do
 end
 
 events_dispatch:on_event(defines.events.on_player_set_quick_bar_slot, function(event)
-    update_hud_bacause("quickbar_interaction", event.player_index, event.tick)
+    update_hud_bacause("quickbar_event", event.player_index, event.tick)
+end)
+
+-- MARK: Hover
+
+events_dispatch:on_internal("player_setup", function (player_index)
+    local player = game.get_player(player_index)
+
+    if not player.gui.screen[own"top_hover"] then
+        local top_hover = player.gui.screen.add{
+            type = "flow",
+            direction = "horizontal",
+            name = own"top_hover"
+        }
+        top_hover.style.height = 4
+        top_hover.style.horizontal_align = "center"
+
+        local mod_gui_hover = top_hover.add{
+            type = "empty-widget",
+            name = "mod_gui_hover",
+            raise_hover_events = true,
+            tags = {[own"on_hover"] = "mods_top_event"}
+        }
+        mod_gui_hover.style.horizontally_stretchable = true
+        mod_gui_hover.style.vertically_stretchable = true
+
+        local all_ui_hover = top_hover.add{
+            type = "empty-widget",
+            name = "all_ui_hover",
+            raise_hover_events = true,
+            tags = {[own"on_hover"] = "all_ui_event"}
+        }
+        all_ui_hover.style.horizontally_stretchable = true
+        all_ui_hover.style.vertically_stretchable = true
+
+        local research_hover = top_hover.add{
+            type = "empty-widget",
+            name = "research_hover",
+            raise_hover_events = true,
+            tags = {[own"on_hover"] = {"research_event", "side_menu_event", "map_options_event"}}
+        }
+        research_hover.style.horizontally_stretchable = true
+        research_hover.style.vertically_stretchable = true
+    end
+
+    if not player.gui.screen[own"bottom_hover"] then
+        local bottom_hover = player.gui.screen.add{
+            type = "flow",
+            direction = "horizontal",
+            name = own"bottom_hover"
+        }
+        bottom_hover.style.height = 4
+        bottom_hover.style.horizontal_align = "center"
+
+        local toolbar_hover = bottom_hover.add{
+            type = "empty-widget",
+            name = "toolbar_hover",
+            raise_hover_events = true,
+            tags = {[own"on_hover"] = "toolbar_event"}
+        }
+        toolbar_hover.style.horizontally_stretchable = true
+        toolbar_hover.style.vertically_stretchable = true
+
+        local quickbar_hover = bottom_hover.add{
+            type = "empty-widget",
+            name = "quickbar_hover",
+            style= own"quickbar_hover",
+            raise_hover_events = true,
+            tags = {[own"on_hover"] = "quickbar_event"}
+        }
+        quickbar_hover.style.vertically_stretchable = true
+
+        local shortcuts_hover = bottom_hover.add{
+            type = "empty-widget",
+            name = "shortcuts_hover",
+            raise_hover_events = true,
+            tags = {[own"on_hover"] = "shortcuts_event"}
+        }
+        shortcuts_hover.style.horizontally_stretchable = true
+        shortcuts_hover.style.vertically_stretchable = true
+    end
+
+    if not player.gui.screen[own"left_hover"] then
+        local left_hover = player.gui.screen.add{
+            type = "empty-widget",
+            name = own"left_hover",
+            raise_hover_events = true,
+            tags = {[own"on_hover"] = {"surface_list_event", "mods_left_event"}}
+        }
+        left_hover.style.width = 4
+    end
+
+    if not player.gui.screen[own"right_hover"] then
+        local right_hover = player.gui.screen.add{
+            type = "empty-widget",
+            name = own"right_hover",
+            raise_hover_events = true,
+            tags = {[own"on_hover"] = {"minimap_event", "map_options_event"}}
+        }
+        right_hover.style.width = 4
+    end
+end)
+
+events_dispatch:on_event(defines.events.on_gui_hover, function(event)
+    local hud_update_reason = event.element.tags[own"on_hover"]
+    if not hud_update_reason then return end
+
+    -- "on hover" should be renamed to "on enter", no throttling needed.
+    local state = storage.per_player[event.player_index]
+    if type(hud_update_reason) == "string" then
+        state.time_of[hud_update_reason] = event.tick
+    else
+        for _, reason in pairs(hud_update_reason) do
+            state.time_of[reason] = event.tick
+        end
+    end
+    update_hud(event.player_index)
+end)
+
+function sync.hover_overlays_location(_, player)
+    -- (Factorio v2.0.76) Don't place elements at {0,0}.
+    -- See https://forums.factorio.com/viewtopic.php?t=133488
+
+    local top_hover = player.gui.screen[own"top_hover"]
+    top_hover.location = { 1, 0 }
+    top_hover.style.width = player.display_resolution.width / player.display_scale
+
+    local bottom_hover = player.gui.screen[own"bottom_hover"]
+    bottom_hover.location = { 0, player.display_resolution.height - 4 * player.display_scale }
+    bottom_hover.style.width = player.display_resolution.width / player.display_scale
+
+    local left_hover = player.gui.screen[own"left_hover"]
+    left_hover.location = { 0, 1 }
+    left_hover.style.height = player.display_resolution.height / player.display_scale
+
+    local right_hover = player.gui.screen[own"right_hover"]
+    right_hover.location = { player.display_resolution.width - 4 * player.display_scale, 0 }
+    right_hover.style.height = player.display_resolution.height / player.display_scale
+end
+
+events_dispatch:on_event(defines.events.on_player_display_resolution_changed, function(event)
+    sync.hover_overlays_location(nil, game.get_player(event.player_index))
+end)
+
+events_dispatch:on_event(defines.events.on_player_display_scale_changed, function(event)
+    sync.hover_overlays_location(nil, game.get_player(event.player_index))
 end)
