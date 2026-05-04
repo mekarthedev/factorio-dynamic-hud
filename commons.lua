@@ -1,7 +1,7 @@
--- `info.lua` is a mod-specific config file
-local info = require("info")
-
-local own_prefix = info.own_namespace .. "_"
+-- `script` isn't available during prototype stage, so no `script.mod_name`.
+-- Instead introduce `info.lua` to be a mod-specific mirror of info.json.
+local mod_info = require "info"
+local own_prefix = mod_info.name .. "_"
 
 function own(name)
     return own_prefix .. name

@@ -8,6 +8,11 @@ if (modifiedFiles && !Bun.argv.includes("--unsafe")) {
   throw new Error("Uncommitted changes found; stash or discard before archiving.")
 }
 
+const infoLua = (await Bun.file("info.lua").text()).match(/\bname\s*=\s*"(?<name>[^"]+)"/)?.groups
+if (!infoLua || infoLua.name !== info.name) {
+  throw new Error(`info.lua contradicts info.json; found: ${infoLua?.name}, expected: ${info.name}`)
+}
+
 const commitShort = (await $`git rev-parse --short HEAD`.text()).trim()
 const zipName = `${info.name}_${info.version}`
 const folderName = `${zipName}+${commitShort}`

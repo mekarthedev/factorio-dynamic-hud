@@ -1,3 +1,3 @@
 return {
-    own_namespace = "aglaron-dhud"
+    name = "dynamic-hud"
 }

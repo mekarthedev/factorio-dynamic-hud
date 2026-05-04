@@ -16,7 +16,6 @@ require "hover-overlays"
 -- #todo: add setting to show alerts when a controller bar is shown
 -- #todo: always hide all controller bars together, same for right side elements = maybe less junky UX
 -- #todo: teach user about hovering over screen edges
--- #todo: use info.json/name instead of `own_namespace`
 
 script.on_init(function()
     init()
