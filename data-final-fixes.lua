@@ -1,4 +1,4 @@
-require("commons")
+require "commons"
 
 local gui_styles = data.raw["gui-style"].default
 local quickbar_style = gui_styles["quick_bar_slot_window_frame"]

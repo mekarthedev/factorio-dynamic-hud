@@ -1,4 +1,4 @@
-require("commons")
+require "commons"
 
 data:extend({
     {
