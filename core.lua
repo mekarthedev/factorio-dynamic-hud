@@ -178,6 +178,33 @@ function update_hud(player_index)
     player.game_view_settings.show_alert_gui = show_alerts
 
     if next(time_of) ~= nil then
+        local toolbar_event = time_of.toolbar_event
+        local quickbar_event = time_of.quickbar_event
+        local shortcuts_event = time_of.shortcuts_event
+        local most_recent_time = math.max(
+            toolbar_event or 0,
+            quickbar_event or 0,
+            shortcuts_event or 0
+        )
+        if toolbar_event then time_of.toolbar_event = most_recent_time end
+        if quickbar_event then time_of.quickbar_event = most_recent_time end
+        if shortcuts_event then time_of.shortcuts_event = most_recent_time end
+
+        local research_event = time_of.research_event
+        local side_menu_event = time_of.side_menu_event
+        local map_options_event = time_of.map_options_event
+        local minimap_event = time_of.minimap_event
+        local most_recent_time = math.max(
+            research_event or 0,
+            side_menu_event or 0,
+            map_options_event or 0,
+            minimap_event or 0
+        )
+        if research_event then time_of.research_event = most_recent_time end
+        if side_menu_event then time_of.side_menu_event = most_recent_time end
+        if map_options_event then time_of.map_options_event = most_recent_time end
+        if minimap_event then time_of.minimap_event = most_recent_time end
+
         schedule_hud_update()
     end
 end
