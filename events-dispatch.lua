@@ -1,5 +1,7 @@
 -- Register possible continuations by adding them to this table.
 -- Registered continuations can then be used with `events_dispatch` as event handlers.
+-- IMPORTANT: continuations can be referenced in storage, and thus are subject to migrations when renamed.
+--
 ---@alias ContinuationName string
 ---@alias ContinuationClosure unknown[]
 ---@alias Continuation [ContinuationName, ContinuationClosure]

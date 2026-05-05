@@ -130,7 +130,7 @@ function update_hud(player_index)
     local show_toolbar = show_controller_bars
         or time_of.toolbar_event ~= nil
         or in_combat
-        -- Workaround (Factorio v2.0.76):
+        -- Workaround (Factorio v2.0.76, expected to be fixed in v2.1):
         -- The vehicle toolbar is not affected by `show_tool_bar` while driving with a character
         -- but is affected while driving remotely. If hidden in remote, it will not show back up
         -- for vehicle driven by character until next `show_tool_bar = true` write.

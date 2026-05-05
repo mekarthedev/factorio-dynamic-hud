@@ -15,5 +15,8 @@
         "unbalanced-assignments": "Error",
         "undefined-global": "Error",
         "undefined-field": "Error"
+    },
+    "files.associations": {
+        "**/locale/*/*.cfg": "dotenv"
     }
 }

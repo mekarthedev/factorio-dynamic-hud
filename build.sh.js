@@ -18,8 +18,9 @@ const zipName = `${info.name}_${info.version}`
 const folderName = `${zipName}+${commitShort}`
 const ignoreFiles = [
   import.meta.path,
-  ".gitignore",
   "run.sh.js",
+  ".gitignore",
+  ".vscode",
 ].map(f => ":(exclude)" + f)
 
 await $`git archive -o .ignore/${zipName}.zip --prefix=${folderName}/ HEAD ${ignoreFiles}`

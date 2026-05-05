@@ -10,5 +10,5 @@
         "! hud-auto-hide",
         "! hide-uis"
     ],
-    "description": "Hide all UI/HUD by default and then dynamically show only relevant parts of UI based on player's current in-game actions.\n\nShows minimap when you are driving, shows weapons when you are fighting, shows shortcuts when you are rewiring your combinators, and some more.\n\nHelps keeping your OLED safe from burn-ins as a bonus."
+    "description": "Hide all UI/HUD (minimap, research progress, quickbar, etc.) and then automatically show only relevant parts based on player's current in-game actions.\n\nShows minimap when you are driving, shows weapons when you are fighting, shows shortcuts when you are rewiring your combinators, and some more.\n\nHelps keeping your OLED safe from burn-ins as a bonus."
 }
