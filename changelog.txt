@@ -1,4 +1,13 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.2.1
+Date: 2026-05-05
+  Changes:
+    - Areas around screen edges will no longer take screen space when auto-hiding is disabled.
+    - All elements of bottom UI will now always auto-hide together to not waste player's attention
+      on each one hiding one after another.
+    - Alerts will now show up whenever toolbar, quickbar, or shortcuts bar shows up.
+      Can be disabled in settings.
+---------------------------------------------------------------------------------------------------
 Version: 1.2.0
 Date: 2026-05-04
   Features:
