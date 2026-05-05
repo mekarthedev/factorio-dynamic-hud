@@ -1,13 +1,22 @@
-A mod for Factorio that hides all HUD/UI by default and then dynamically shows only relevant parts of UI based on player's current in-game actions. Inspired by burn-in marks on my OLED.
+A mod for Factorio: https://mods.factorio.com/mod/dynamic-hud
+
+- Run additional Factorio instances for multiplayer testing using `$ bun run.sh.js <some-instance-name>`
+- Export ready for upload zip using `$ bun build.sh.js`.
+
+Description for the mod portal:
+
+Automatically hides and shows only currently relevant parts of UI/HUD (minimap, research progress, quickbar, shortcuts, other mods buttons, etc.) based on your current in-game actions. Inspired by burn-in marks on my OLED.
 
 # Features
 
-- Keeps currently irrelevant UI hidden. You can reveal all your UI by opening your character inventory.
-- Waits for a delay before hiding parts of the UI that stop being relevant right now (configurable delay).
-- Shows minimap only while you are driving (configurable).
+- Keeps currently irrelevant UI hidden.
+- You can reveal all your UI by opening your character inventory or by moving mouse cursor to the top-center edge of the screen.
+- You can reveal a part of UI you need right now by moving mouse cursor to the edge of the screen near the UI you need.
+- Waits for a delay before hiding parts of the UI that stop being relevant (configurable delay).
+- Automatically shows minimap when you are driving (configurable).
 - Brings up weapons/ammo/toolbar when you are shoting, getting attacked, switching guns, or just managing your armor and ammo.
-- Shows quickbar only when using its hotkeys (configurable).
-- Shows reasearch progress panel only temporarily to notify about finished research.
+- Shows quickbar when you use its hotkeys (configurable).
+- Shows reasearch progress panel temporarily to notify about finished research.
 - Shows alerts only when there were recent changes to active alerts (configurable).
 - Shortcuts bar is kept visible when using wires, so that you can easily switch to a different wire type.
 - Hides other mods buttons (configurable).
@@ -18,10 +27,10 @@ Look up *Dynamic HUD* in *Settings → Mod settings → Per player* to configure
 
 # Known issues and limitations
 
-- Blueprints, planners and remotes cannot be selected from hidden quickbar with a hotkey (expected to be fixed in Factorio 2.1).
-- When driving a vehicle with a character (not remotely), the vehicle's weapons/ammo bar will not be hidden.
-- List of pins, if there are any, will not be hidden (expected to be fixed in Factorio 2.1).
-- Hidden UI will not reappear in existing saves on its own after this mod is uninstalled. See below.
+- Blueprints, planners and remotes cannot be selected from *hidden* quickbar with a hotkey *(expected to be fixed in Factorio 2.1)*.
+- When driving a vehicle with a character (not remotely), the vehicle's weapons/ammo bar will not be hidden *(expected to be fixed in Factorio 2.1)*.
+- List of pins, if there are any, will not be hidden *(expected to be fixed in Factorio 2.1)*.
+- After this mod is uninstalled, hidden UI will not reappear in existing saves on its own. See below.
 
 # How to uninstall
 

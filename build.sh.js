@@ -19,6 +19,7 @@ const folderName = `${zipName}+${commitShort}`
 const ignoreFiles = [
   import.meta.path,
   "run.sh.js",
+  "README.md",
   ".gitignore",
   ".vscode",
 ].map(f => ":(exclude)" + f)
