@@ -13,7 +13,6 @@ require "hover-overlays"
 --        - remove quckbar workaround: https://forums.factorio.com/viewtopic.php?t=133377
 -- #todo: show custom short lived "no more alerts" alert as a replacement for built-in hiding when no alerts
 -- #todo: pretty popup for welcome message instead of console
--- #todo: add setting to show alerts when a controller bar is shown
 -- #todo: click on hover overlays to keep related elements shown
 -- #todo: always hide all controller bars together, same for right side elements = maybe less junky UX
 

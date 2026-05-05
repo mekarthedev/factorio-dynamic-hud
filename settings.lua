@@ -60,6 +60,13 @@ data:extend({
         order = "3",
     },
     {
+        name = own"show-alerts-with-controller-bars",
+        type = "bool-setting",
+        setting_type = "runtime-per-user",
+        default_value = true,
+        order = "3.1",
+    },
+    {
         name = own"hide-top",
         type = "bool-setting",
         setting_type = "runtime-per-user",

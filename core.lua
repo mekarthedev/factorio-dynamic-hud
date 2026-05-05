@@ -111,10 +111,6 @@ function update_hud(player_index)
         or time_of.controller_changed ~= nil
         or time_of.surface_list_event ~= nil
 
-    local show_alerts = show_all
-        or time_of.alerts_event ~= nil
-        or not settings.hide_alerts
-
     local show_controller_bars = show_all
         or state.opened_gui == defines.gui_type.item
         or state.opened_gui == defines.gui_type.entity
@@ -146,6 +142,11 @@ function update_hud(player_index)
     local show_shortcuts = show_controller_bars
         or state.in_cursor == cursor_type.wire
         or time_of.shortcuts_event ~= nil
+
+    local show_alerts = show_all
+        or time_of.alerts_event ~= nil
+        or (show_toolbar or show_quickbar or show_shortcuts) and settings.show_alerts_with_controller_bars
+        or not settings.hide_alerts
 
     local show_mod_top = show_all
         or time_of.mods_top_event ~= nil
@@ -271,6 +272,7 @@ function update(player_index)
     state.settings.show_quickbar_on_use = ps[own"show-quickbar-on-use"].value
     state.settings.show_quickbar_in_combat = ps[own"show-quickbar-in-combat"].value
     state.settings.hide_alerts = ps[own"hide-alerts"].value
+    state.settings.show_alerts_with_controller_bars = ps[own"show-alerts-with-controller-bars"].value
     state.settings.hide_top = ps[own"hide-top"].value
     state.settings.hide_left = ps[own"hide-left"].value
     state.settings.hide_goal = ps[own"hide-goal"].value
