@@ -4,10 +4,18 @@ require "core"
 
 local hover_overlay_thickness = 4
 
-events_dispatch:on_internal("player_setup", function (player_index)
+events_dispatch:on_internal("player_setup", function (player_index, state)
     local player = game.get_player(player_index)
 
-    if not player.gui.screen[own"top_hover"] then
+    local function add_or_destory(element, add)
+        if not element and state.dynamic_hud_enabled then
+            add()
+        elseif element and not state.dynamic_hud_enabled then
+            element.destroy()
+        end
+    end
+
+    add_or_destory(player.gui.screen[own"top_hover"], function ()
         local top_hover = player.gui.screen.add{
             type = "flow",
             direction = "horizontal",
@@ -42,9 +50,9 @@ events_dispatch:on_internal("player_setup", function (player_index)
         }
         research_hover.style.horizontally_stretchable = true
         research_hover.style.vertically_stretchable = true
-    end
+    end)
 
-    if not player.gui.screen[own"bottom_hover"] then
+    add_or_destory(player.gui.screen[own"bottom_hover"], function ()
         local bottom_hover = player.gui.screen.add{
             type = "flow",
             direction = "horizontal",
@@ -79,9 +87,9 @@ events_dispatch:on_internal("player_setup", function (player_index)
         }
         shortcuts_hover.style.horizontally_stretchable = true
         shortcuts_hover.style.vertically_stretchable = true
-    end
+    end)
 
-    if not player.gui.screen[own"left_hover"] then
+    add_or_destory(player.gui.screen[own"left_hover"], function ()
         local left_hover = player.gui.screen.add{
             type = "empty-widget",
             name = own"left_hover",
@@ -89,9 +97,9 @@ events_dispatch:on_internal("player_setup", function (player_index)
             tags = {[own"on_hover"] = {"surface_list_event", "mods_left_event"}}
         }
         left_hover.style.width = hover_overlay_thickness
-    end
+    end)
 
-    if not player.gui.screen[own"right_hover"] then
+    add_or_destory(player.gui.screen[own"right_hover"], function ()
         local right_hover = player.gui.screen.add{
             type = "empty-widget",
             name = own"right_hover",
@@ -99,7 +107,7 @@ events_dispatch:on_internal("player_setup", function (player_index)
             tags = {[own"on_hover"] = {"minimap_event", "map_options_event"}}
         }
         right_hover.style.width = hover_overlay_thickness
-    end
+    end)
 end)
 
 events_dispatch:on_event(defines.events.on_gui_hover, function(event)

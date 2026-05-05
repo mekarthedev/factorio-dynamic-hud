@@ -245,7 +245,7 @@ function setup(player_index)
     set_default(state, "driving_mode", driving_mode.not_driving)
     set_default(state, "alerts_summary", {})
 
-    events_dispatch:notify("internal", "player_setup", player_index)
+    events_dispatch:notify("internal", "player_setup", player_index, state)
 end
 
 function remove(player_index)

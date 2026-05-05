@@ -10,8 +10,8 @@
 ---  notify: fun(self, handler: Continuation, event: unknown)
 ---}
 continuations = {
-    notify = function (self, handler, event)
-        self[handler[1]](handler[2], event)
+    notify = function (self, handler, ...)
+        self[handler[1]](handler[2], ...)
     end
 }
 
@@ -37,7 +37,7 @@ events_dispatch = {
         end
     end,
 
-    notify = function (self, kind, event_type, event)
+    notify = function (self, kind, event_type, ...)
         local handlers = self.handlers[kind][event_type]
         if not handlers then return false end  -- shouldn't happen
 
@@ -48,9 +48,9 @@ events_dispatch = {
         for key, handle in pairs(handlers) do
             if key <= batch_last_key then
                 if type(handle) == "function" then
-                    handle(event)
+                    handle(...)
                 else
-                    continuations:notify(handle, event)
+                    continuations:notify(handle, ...)
                 end
             end
         end

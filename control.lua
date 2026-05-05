@@ -14,7 +14,6 @@ require "hover-overlays"
 -- #todo: show custom short lived "no more alerts" alert as a replacement for built-in hiding when no alerts
 -- #todo: pretty popup for welcome message instead of console
 -- #todo: add setting to show alerts when a controller bar is shown
--- #todo: hide or destroy hover overlays when deactivated
 -- #todo: click on hover overlays to keep related elements shown
 -- #todo: always hide all controller bars together, same for right side elements = maybe less junky UX
 
@@ -56,7 +55,10 @@ script.on_event(own"activate", function(event)
         --       regardless of their `dynamic_hud_enabled`.
         init()
     else
+        setup(event.player_index)
         update_hud(event.player_index)
+        -- Try not to make events listening conditional on `dynamic_hud_enabled`.
+        -- It should only control connection. For anything else use subscription instead.
         bind.events_connection()
     end
 end)
